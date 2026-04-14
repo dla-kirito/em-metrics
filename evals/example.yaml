@@ -1,0 +1,41 @@
+# Example eval task: Fix a broken import
+#
+# Before running this eval, you need to prepare the workspace:
+#   1. Create /tmp/eval-workspaces/fix-import/ with a small Node project
+#   2. Introduce a broken import in src/index.ts
+#   3. Commit as "eval-start" tag
+#
+# See README or plan for detailed workspace setup instructions.
+
+id: fix-import-error
+name: "Fix broken import in index.ts"
+prompt: "The project has a broken import that causes tests to fail. Find and fix it."
+cwd: /tmp/eval-workspaces/fix-import
+
+setup:
+  - "git checkout eval-start"
+  - "git clean -fd"
+
+graders:
+  - type: code
+    name: tests-pass
+    check: command
+    command: "npx tsx test/index.test.ts"
+
+  - type: code
+    name: import-fixed
+    check: file_not_contains
+    path: "src/index.ts"
+    pattern: "from './nonexistent'"
+
+teardown:
+  - "git checkout eval-start"
+  - "git clean -fd"
+
+tags:
+  - regression
+  - imports
+
+trials: 3
+timeout_s: 120
+max_budget_usd: 0.5

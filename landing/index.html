@@ -1,0 +1,403 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>em-metrics — Claude Code Observability</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:opsz,wght@14..32,300;14..32,400;14..32,500;14..32,600;14..32,700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:          #000000;
+      --surface:     #080808;
+      --border:      #1a1a1a;
+      --border-2:    #242424;
+      --accent:      #818cf8;
+      --accent-glow: rgba(129,140,248,0.18);
+      --text:        #f4f4f5;
+      --text-dim:    #3f3f46;
+      --warning:     #f59e0b;
+    }
+
+    html, body { width: 100%; height: 100%; overflow: hidden; }
+
+    body {
+      background: var(--bg);
+      font-family: 'Inter', system-ui, sans-serif;
+      color: var(--text);
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* radial purple tint centred on hero */
+    body::after {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background: radial-gradient(ellipse 900px 500px at 50% 48%,
+        rgba(60,40,120,0.18) 0%,
+        transparent 70%);
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    /* ─── TOP BAR ─────────────────────────── */
+
+    /* ─── EYEBROW ─────────────────────────── */
+    .eyebrow {
+      display: flex; align-items: center; gap: 8px;
+      margin-bottom: 14px;
+      animation: up 0.55s cubic-bezier(.16,1,.3,1) both;
+    }
+    .ey-name {
+      font-size: 13px; font-weight: 600;
+      color: #fff; letter-spacing: -0.3px;
+    }
+    .ey-sep { font-size: 13px; color: #2a2a2a; }
+    .ey-ver {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px; color: #555; letter-spacing: 0.3px;
+    }
+
+    /* ─── HERO ────────────────────────────── */
+    .hero {
+      position: relative; z-index: 1;
+      flex: 1;
+      display: flex; flex-direction: column;
+      align-items: center; justify-content: center;
+      padding: 24px 40px 24px;
+      gap: 0;
+      overflow: hidden;
+    }
+
+    .headline {
+      font-size: 62px; font-weight: 700;
+      letter-spacing: -3.1px; line-height: 1.03;
+      text-align: center; color: #fff;
+      margin-bottom: 20px;
+      animation: up 0.55s .14s cubic-bezier(.16,1,.3,1) both;
+    }
+
+    /* ─── TERMINAL ────────────────────────── */
+    .term {
+      width: min(1100px, calc(100vw - 80px));
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      background: var(--surface);
+      overflow: hidden;
+      margin-bottom: 0;
+      animation: up 0.55s .22s cubic-bezier(.16,1,.3,1) both;
+      box-shadow: 0 0 0 1px #000, 0 24px 80px rgba(0,0,0,0.7);
+      display: flex; flex-direction: column;
+      max-height: 560px;
+    }
+
+    .term-bar {
+      flex-shrink: 0;
+      height: 35px; background: #0c0c0c;
+      border-bottom: 1px solid var(--border);
+      display: flex; align-items: center; padding: 0 13px; gap: 6px;
+    }
+    .dot { width: 10px; height: 10px; border-radius: 50%; background: #222; }
+    .term-bar-cmds {
+      margin-left: auto;
+      display: flex; align-items: center;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 10.5px; letter-spacing: 0.1px;
+    }
+    .term-cmd { color: #404040; }
+    .term-cmd-sep { color: #242424; padding: 0 10px; }
+
+    .term-body {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 12px; line-height: 1.65;
+      overflow-y: auto; flex: 1;
+      padding: 14px 20px 18px;
+    }
+
+    /* split layout */
+    .term-split { padding: 0 !important; display: flex; flex-direction: row; }
+    .term-panel {
+      flex: 1; min-width: 0;
+      padding: 14px 18px 18px;
+      overflow-y: auto;
+    }
+    .term-panel::-webkit-scrollbar { width: 3px; }
+    .term-panel::-webkit-scrollbar-track { background: transparent; }
+    .term-panel::-webkit-scrollbar-thumb { background: #1e1e1e; border-radius: 2px; }
+    .term-divider { width: 1px; background: #141414; flex-shrink: 0; align-self: stretch; }
+
+    .t-prompt { display: flex; align-items: center; margin-bottom: 4px; }
+    .t-arrow { color: var(--accent); margin-right: 8px; font-size: 11px; }
+    .t-cmd { color: #4a4a56; }
+    .cursor {
+      display: inline-block; width: 6px; height: 12px;
+      background: var(--accent); margin-left: 3px;
+      vertical-align: middle; opacity: 0.6;
+      animation: blink 1.05s step-end infinite;
+    }
+
+    .t-found { color: #e4e4e7; font-weight: 500; margin-bottom: 6px; }
+
+    /* column header */
+    .t-hdr { color: #2e2e2e; }
+
+    /* normal metric row */
+    .t-row {
+      display: flex;
+      border-radius: 3px; padding: 0 3px; margin: 0 -3px;
+      transition: background 0.1s;
+    }
+    .t-row:hover { background: rgba(255,255,255,0.025); }
+    .t-lbl { color: #3f3f46; flex: 0 0 18ch; }
+    .t-lbl2 { color: #2a2a2a; flex: 0 0 18ch; }
+    .t-lbl-w { color: #3f3f46; flex: 0 0 20ch; }  /* wider — interaction/efficiency */
+    .t-col { color: #a1a1aa; flex: 0 0 9ch; }
+    .t-col-dim { color: #2e2e2e; flex: 0 0 9ch; }
+    .t-note { color: #2e2e2e; }
+
+    /* section header */
+    .t-sec { color: #e4e4e7; font-weight: 600; margin-top: 10px; margin-bottom: 2px; }
+
+    /* inline key=value rows */
+    .t-irow { color: #3f3f46; }
+    .t-irow .v { color: #a1a1aa; }
+    .t-irow .vd { color: #2e2e2e; }
+
+    /* code changes */
+    .t-add { color: #4ade80; }
+    .t-del { color: #f87171; }
+
+    /* tool dist */
+    .t-tool-name { color: #3f3f46; flex: 0 0 16ch; }
+    .t-tool-count { color: #a1a1aa; flex: 0 0 5ch; text-align: right; padding-right: 2ch; }
+    .t-tool-pct { color: #2e2e2e; }
+
+    /* show-specific */
+    .t-sid { color: var(--accent); font-weight: 500; }
+    .t-smeta { color: #3a3a3a; }
+    .t-sep { color: #252525; }
+    .t-key { color: #3f3f46; }
+    .t-val { color: #a1a1aa; }
+    .t-sub { color: #2a2a2a; }
+
+    /* sparkline */
+    .t-spark { display: block; line-height: 1.0; letter-spacing: 1.5px; margin: 4px 0 2px; }
+    .sp-h { color: #22c55e; }
+    .sp-m { color: #ca8a04; }
+    .sp-l { color: #dc2626; }
+    .t-slg { color: #2e2e2e; font-size: 11px; }
+
+    .t-gap { height: 4px; }
+    .t-line { border: none; border-top: 1px solid #111; margin: 8px 0; }
+
+    /* ─── INSTALL ─────────────────────────── */
+    .install {
+      position: relative;
+      display: inline-flex; align-items: center; gap: 12px;
+      padding: 12px 22px; border-radius: 8px;
+      border: 1px solid rgba(129,140,248,0.22);
+      background: rgba(129,140,248,0.04);
+      box-shadow: 0 0 28px rgba(129,140,248,0.07);
+      cursor: pointer; user-select: none;
+      transition: border-color .15s, background .15s, box-shadow .15s;
+      animation: up 0.55s .20s cubic-bezier(.16,1,.3,1) both;
+    }
+    .install:hover {
+      border-color: rgba(129,140,248,0.38);
+      background: rgba(129,140,248,0.07);
+      box-shadow: 0 0 36px rgba(129,140,248,0.12);
+    }
+    .install:active { transform: scale(0.99); }
+
+    .i-dollar {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px; font-weight: 500; color: var(--accent);
+    }
+    .i-cmd {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14px; color: #909099; letter-spacing: 0.1px;
+    }
+    .i-copy {
+      color: rgba(129,140,248,0.35);
+      transition: color .15s;
+      flex-shrink: 0;
+    }
+    .install:hover .i-copy { color: var(--accent); }
+
+    .toast {
+      position: absolute;
+      bottom: calc(100% + 9px); left: 50%;
+      transform: translateX(-50%) translateY(4px);
+      background: #0d0d1f; border: 1px solid #2a2a50;
+      color: var(--accent);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px; padding: 4px 11px; border-radius: 5px;
+      white-space: nowrap; opacity: 0; pointer-events: none;
+      transition: opacity .15s, transform .15s;
+    }
+    .install.did-copy .toast {
+      opacity: 1; transform: translateX(-50%) translateY(0);
+    }
+
+    /* ─── ANIMATIONS ──────────────────────── */
+    @keyframes up {
+      from { opacity: 0; transform: translateY(14px); }
+      to   { opacity: 1; transform: translateY(0); }
+    }
+    @keyframes blink {
+      0%,100% { opacity: 0.6; }
+      50%      { opacity: 0; }
+    }
+  </style>
+</head>
+<body>
+
+  <main class="hero">
+    <div class="eyebrow">
+      <span class="ey-name">em-metrics</span>
+      <span class="ey-sep">·</span>
+      <span class="ey-ver">v0.1.0</span>
+    </div>
+    <h1 class="headline">Your agent's work is measurable.</h1>
+
+    <div class="install" onclick="copyCmd(this)" style="margin-bottom: 22px;">
+      <span class="i-dollar">$</span>
+      <span class="i-cmd">npm install -g em-metrics</span>
+      <svg class="i-copy" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+      <div class="toast">copied to clipboard</div>
+    </div>
+
+    <div class="term">
+      <div class="term-bar">
+        <div class="dot"></div><div class="dot"></div><div class="dot"></div>
+        <div class="term-bar-cmds">
+          <span class="term-cmd">em show --last</span>
+          <span class="term-cmd-sep">│</span>
+          <span class="term-cmd">em analyze --since 2026-04-06</span>
+        </div>
+      </div>
+      <div class="term-body term-split">
+
+        <!-- ── LEFT: em show --last ── -->
+        <div class="term-panel">
+          <div class="t-prompt">
+            <span class="t-arrow">❯</span>
+            <span class="t-cmd">em show --last</span>
+          </div>
+          <div class="t-gap"></div>
+          <div><span class="t-sid">Session a3f7bc91</span><span class="t-smeta">  claude-opus-4-5  4m 12s / 2m 38s</span></div>
+          <div class="t-sep">────────────────────────────────────────────────────</div>
+          <div><span class="t-key">  Turns:&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="t-val">16 main + 0 sidechain</span></div>
+          <div><span class="t-key">  Tokens:&nbsp;&nbsp;&nbsp;</span><span class="t-val">184203 in / 8471 out</span></div>
+          <div><span class="t-key">  Cost:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="t-val">$0.3400</span></div>
+          <div><span class="t-key">  Cache:&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="t-val">141284 read / 38920 create &nbsp;<span class="t-note">(hit: 78%)</span></span></div>
+          <div><span class="t-key">  Tools:&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="t-val">42 calls</span></div>
+          <div><span class="t-sub">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Read:&nbsp;11 &nbsp;&nbsp;Edit:&nbsp;8 &nbsp;&nbsp;Bash:&nbsp;7</span></div>
+          <div><span class="t-sub">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;Grep:&nbsp;&nbsp;6 &nbsp;&nbsp;Glob:&nbsp;4 &nbsp;&nbsp;Write:&nbsp;3</span></div>
+          <div><span class="t-key">  Code:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="t-add">+234</span>&nbsp;<span class="t-smeta">/</span>&nbsp;<span class="t-del">-47</span>&nbsp;&nbsp;<span class="t-note">(6 files)</span></div>
+          <div><span class="t-key">  Stop:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;</span><span class="t-val">end_turn</span></div>
+          <hr class="t-line">
+          <div class="t-sec">&nbsp;&nbsp;Interaction:</div>
+          <div class="t-irow">&nbsp;&nbsp;&nbsp;&nbsp;User turns:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="v">6</span></div>
+          <div class="t-irow">&nbsp;&nbsp;&nbsp;&nbsp;Corrections:&nbsp;&nbsp;&nbsp;<span class="v">1</span>&nbsp;<span class="vd">(follow-ups)</span></div>
+          <div class="t-irow">&nbsp;&nbsp;&nbsp;&nbsp;Tool errors:&nbsp;&nbsp;&nbsp;<span style="color:#f87171">2</span></div>
+          <hr class="t-line">
+          <div class="t-sec">&nbsp;&nbsp;Efficiency:</div>
+          <div class="t-irow">&nbsp;&nbsp;&nbsp;&nbsp;Tokens/LOC:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="v">38</span></div>
+          <div class="t-irow">&nbsp;&nbsp;&nbsp;&nbsp;Tool success:&nbsp;&nbsp;&nbsp;&nbsp;<span class="v">95%</span></div>
+          <div class="t-irow">&nbsp;&nbsp;&nbsp;&nbsp;Exploration:&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;<span class="v">50%</span>&nbsp;<span class="vd">(Read+Grep+Glob)</span></div>
+          <div class="t-irow">&nbsp;&nbsp;&nbsp;&nbsp;Edit precision:&nbsp;&nbsp;<span class="v">80%</span></div>
+          <hr class="t-line">
+          <div class="t-irow">&nbsp;&nbsp;<b style="color:#e4e4e7">Cache trend:</b>&nbsp;<span class="vd">16 turns &middot; avg 78% &middot; min 42%</span></div>
+          <div class="t-spark">&nbsp;&nbsp;&nbsp;&nbsp;<span class="sp-h">▌▌▌▌▌▌</span><span class="sp-m">▌▌▌</span><span class="sp-l">▌</span><span class="sp-m">▌▌</span><span class="sp-h">▌▌▌▌</span></div>
+          <div class="t-slg">&nbsp;&nbsp;&nbsp;&nbsp;<span class="sp-h">█</span>&nbsp;≥80%&nbsp;&nbsp;<span class="sp-m">█</span>&nbsp;50-80%&nbsp;&nbsp;<span class="sp-l">█</span>&nbsp;&lt;50%</div>
+        </div>
+
+        <div class="term-divider"></div>
+
+        <!-- ── RIGHT: em analyze ── -->
+        <div class="term-panel">
+          <div class="t-prompt">
+            <span class="t-arrow">❯</span>
+            <span class="t-cmd">em analyze --since 2026-04-06</span>
+            <span class="cursor"></span>
+          </div>
+          <div class="t-gap"></div>
+          <div class="t-found">&nbsp;&nbsp;Found 14 sessions</div>
+          <div class="t-gap"></div>
+
+          <!-- header uses same flex structure as data rows -->
+          <div class="t-row">
+            <span class="t-lbl"></span>
+            <span class="t-col t-hdr">avg</span>
+            <span class="t-col t-hdr">median</span>
+            <span class="t-col t-hdr">p90</span>
+          </div>
+          <div class="t-row"><span class="t-lbl">&nbsp;&nbsp;Turns:</span><span class="t-col">18.4</span><span class="t-col">16.0</span><span class="t-col">31</span></div>
+          <div class="t-row"><span class="t-lbl2">&nbsp;&nbsp;&nbsp;&nbsp;main:</span><span class="t-col-dim">16.1</span><span class="t-col-dim">14.0</span><span class="t-col-dim">27</span></div>
+          <div class="t-row"><span class="t-lbl">&nbsp;&nbsp;Tool calls:</span><span class="t-col">42.3</span><span class="t-col">38.0</span><span class="t-col">74</span></div>
+          <div class="t-row"><span class="t-lbl">&nbsp;&nbsp;Tokens in:</span><span class="t-col">184k</span><span class="t-col">162k</span><span class="t-col">311k</span></div>
+          <div class="t-row"><span class="t-lbl">&nbsp;&nbsp;Tokens out:</span><span class="t-col">8.5k</span><span class="t-col">7.2k</span><span class="t-col">14.8k</span></div>
+          <div class="t-row"><span class="t-lbl">&nbsp;&nbsp;Cost ($):</span><span class="t-col">0.340</span><span class="t-col">0.289</span><span class="t-col">0.621</span>&nbsp;&nbsp;<span class="t-note">$4.76 total</span></div>
+          <div class="t-row"><span class="t-lbl">&nbsp;&nbsp;Cache hit:</span><span class="t-col">78%</span><span class="t-col">81%</span><span class="t-col">91%</span></div>
+          <div class="t-row"><span class="t-lbl2">&nbsp;&nbsp;&nbsp;&nbsp;read:</span><span class="t-col-dim">141k</span><span class="t-col-dim">123k</span>&nbsp;&nbsp;<span class="t-note">1.98M total</span></div>
+          <div class="t-row"><span class="t-lbl">&nbsp;&nbsp;One-shot:</span><span class="t-col">21%</span>&nbsp;&nbsp;<span class="t-note">(3 / 14)</span></div>
+          <div class="t-row"><span class="t-lbl">&nbsp;&nbsp;Stop:</span><span class="t-note">end_turn:&nbsp;11&nbsp;&nbsp;max_tokens:&nbsp;2&nbsp;&nbsp;tool_use:&nbsp;1</span></div>
+          <div class="t-row"><span class="t-lbl">&nbsp;&nbsp;Code:</span><span class="t-add">+1847</span>&nbsp;/&nbsp;<span class="t-del">-392</span>&nbsp;&nbsp;<span class="t-note">(23 files)</span></div>
+          <hr class="t-line">
+
+          <div class="t-sec">&nbsp;&nbsp;Interaction:</div>
+          <div class="t-row"><span class="t-lbl-w">&nbsp;&nbsp;&nbsp;&nbsp;User turns:</span><span class="t-col">87</span><span class="t-note">total&nbsp;&nbsp;avg <span style="color:#a1a1aa">6.2</span>&nbsp;&nbsp;med <span style="color:#a1a1aa">5</span></span></div>
+          <div class="t-row"><span class="t-lbl-w">&nbsp;&nbsp;&nbsp;&nbsp;Corrections:</span><span class="t-col">8</span><span class="t-note">total&nbsp;&nbsp;avg <span style="color:#a1a1aa">0.6</span>&nbsp;&nbsp;p90 <span style="color:#2e2e2e">3</span></span></div>
+          <div class="t-row"><span class="t-lbl-w">&nbsp;&nbsp;&nbsp;&nbsp;Tool errors:</span><span class="t-col">12</span><span class="t-note">total&nbsp;&nbsp;avg <span style="color:#a1a1aa">0.9</span>&nbsp;&nbsp;p90 <span style="color:#2e2e2e">3</span></span></div>
+          <div class="t-row"><span class="t-lbl-w">&nbsp;&nbsp;&nbsp;&nbsp;Re-edited files:</span><span class="t-col">5</span><span class="t-note">total&nbsp;&nbsp;avg <span style="color:#a1a1aa">0.4</span></span></div>
+          <div class="t-row"><span class="t-lbl-w">&nbsp;&nbsp;&nbsp;&nbsp;Abandoned:</span><span class="t-note">1 / 14 sessions</span></div>
+          <hr class="t-line">
+
+          <div class="t-sec">&nbsp;&nbsp;Efficiency:</div>
+          <div class="t-row"><span class="t-lbl-w">&nbsp;&nbsp;&nbsp;&nbsp;Tokens/LOC:</span><span class="t-col">42</span><span class="t-note">avg&nbsp;&nbsp;med <span style="color:#a1a1aa">38</span>&nbsp;&nbsp;p90 <span style="color:#2e2e2e">79</span></span></div>
+          <div class="t-row"><span class="t-lbl-w">&nbsp;&nbsp;&nbsp;&nbsp;Tool success:</span><span class="t-col">97%</span><span class="t-note">avg&nbsp;&nbsp;med <span style="color:#2e2e2e">98%</span></span></div>
+          <div class="t-row"><span class="t-lbl-w">&nbsp;&nbsp;&nbsp;&nbsp;Exploration:</span><span class="t-col">44%</span><span class="t-note">avg&nbsp;&nbsp;med <span style="color:#2e2e2e">42%</span>&nbsp;&nbsp;<span style="color:#1e1e1e">(Read+Grep+Glob)</span></span></div>
+          <div class="t-row"><span class="t-lbl-w">&nbsp;&nbsp;&nbsp;&nbsp;Edit precision:</span><span class="t-col">82%</span><span class="t-note">avg&nbsp;&nbsp;med <span style="color:#2e2e2e">85%</span></span></div>
+          <hr class="t-line">
+
+          <div class="t-sec">&nbsp;&nbsp;Tool distribution:</div>
+          <div class="t-row"><span class="t-tool-name">&nbsp;&nbsp;&nbsp;&nbsp;Read</span><span class="t-tool-count">218</span><span class="t-tool-pct">(26%)</span></div>
+          <div class="t-row"><span class="t-tool-name">&nbsp;&nbsp;&nbsp;&nbsp;Edit</span><span class="t-tool-count">164</span><span class="t-tool-pct">(20%)</span></div>
+          <div class="t-row"><span class="t-tool-name">&nbsp;&nbsp;&nbsp;&nbsp;Bash</span><span class="t-tool-count">139</span><span class="t-tool-pct">(17%)</span></div>
+          <div class="t-row"><span class="t-tool-name">&nbsp;&nbsp;&nbsp;&nbsp;Grep</span><span class="t-tool-count">&nbsp;98</span><span class="t-tool-pct">(12%)</span></div>
+          <div class="t-row"><span class="t-tool-name">&nbsp;&nbsp;&nbsp;&nbsp;Glob</span><span class="t-tool-count">&nbsp;71</span><span class="t-tool-pct">&nbsp;(9%)</span></div>
+          <div class="t-row"><span class="t-tool-name">&nbsp;&nbsp;&nbsp;&nbsp;Write</span><span class="t-tool-count">&nbsp;43</span><span class="t-tool-pct">&nbsp;(5%)</span></div>
+          <div class="t-row"><span class="t-tool-name">&nbsp;&nbsp;&nbsp;&nbsp;Agent</span><span class="t-tool-count">&nbsp;39</span><span class="t-tool-pct">&nbsp;(5%)</span></div>
+          <div class="t-row"><span class="t-tool-name">&nbsp;&nbsp;&nbsp;&nbsp;WebFetch</span><span class="t-tool-count">&nbsp;21</span><span class="t-tool-pct">&nbsp;(3%)</span></div>
+          <div class="t-row"><span class="t-tool-name">&nbsp;&nbsp;&nbsp;&nbsp;Task</span><span class="t-tool-count">&nbsp;18</span><span class="t-tool-pct">&nbsp;(2%)</span></div>
+          <div class="t-row"><span class="t-tool-name">&nbsp;&nbsp;&nbsp;&nbsp;TodoWrite</span><span class="t-tool-count">&nbsp;10</span><span class="t-tool-pct">&nbsp;(1%)</span></div>
+        </div>
+
+      </div>
+    </div>
+
+  </main>
+
+  <script>
+    function copyCmd(el) {
+      navigator.clipboard.writeText('npm install -g em-metrics').catch(() => {});
+      const icon = el.querySelector('.i-copy');
+      icon.innerHTML = '<polyline points="20 6 9 17 4 12"/>';
+      icon.style.color = 'var(--accent)';
+      el.classList.add('did-copy');
+      setTimeout(() => {
+        el.classList.remove('did-copy');
+        icon.innerHTML = '<rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>';
+        icon.style.color = '';
+      }, 2000);
+    }
+  </script>
+</body>
+</html>
