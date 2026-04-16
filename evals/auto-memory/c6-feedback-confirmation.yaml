@@ -1,0 +1,80 @@
+# C6: Save feedback from user confirmation (not just corrections)
+#
+# The auto-memory template says:
+#   "Record corrections AND confirmed successes: when a user validates
+#    a non-obvious approach, save it — recording only corrections causes
+#    AI to grow overly cautious over time."
+#
+# This is a multi-turn scenario. First turn: agent makes a non-obvious choice.
+# Second turn: user confirms the approach ("yes exactly, that was the right call").
+# Expected: memory file with type=feedback recording the confirmed approach.
+
+id: c6-feedback-confirmation
+name: "C6: Save confirmed non-obvious approach as feedback"
+source: coco
+binary: ~/.local/bin/trae-cli-eval
+cwd: /tmp/coco-sandbox/eval-c6
+trials: 3
+timeout_s: 120
+difficulty: hard
+capability: auto-memory
+tags: [auto-memory, c6, positive, feedback, confirmation]
+
+setup:
+  - |
+    SKILL_DIR="$HOME/.agents/skills/execute-coco"
+    if [ -d /tmp/coco-sandbox/eval-c6 ]; then
+      bash "$SKILL_DIR/scripts/teardown_sandbox.sh" --sandbox-dir /tmp/coco-sandbox/eval-c6 2>/dev/null || true
+    fi
+    bash "$SKILL_DIR/scripts/setup_sandbox.sh" --template files --name eval-c6
+  - |
+    cd /tmp/coco-sandbox/eval-c6
+    mkdir -p .trae
+    cat > AGENTS.md << 'EOF'
+    # Test Project
+
+    <!-- auto-memory-start -->
+    <!-- auto-memory-end -->
+    EOF
+    git add -A && git commit -q -m "Prepare for eval"
+
+prompts:
+  - "I need to refactor the payment module. Should I split it into separate microservices or keep it as a monolith with better internal boundaries?"
+
+prompt: "Yeah the monolith-with-boundaries approach was exactly right — last time someone tried splitting payments into microservices here it caused 3 months of distributed transaction hell. Remember that for future refactoring decisions."
+
+graders:
+  - type: code
+    name: memory-file-exists
+    check: command
+    command: "ls .trae/memory/*.md 2>/dev/null | head -1"
+
+  - type: code
+    name: memory-type-feedback
+    check: command
+    command: "grep -r 'type: feedback' .trae/memory/"
+
+  - type: code
+    name: memory-contains-decision
+    check: command
+    command: |
+      # Memory should capture the confirmed approach (monolith/boundaries)
+      # and the reason (microservice split caused problems)
+      if grep -ri 'monolith\|boundar\|microservice\|split' .trae/memory/ 2>/dev/null; then
+        echo "PASS"
+      else
+        echo "FAIL: Memory doesn't capture the architectural decision"
+        cat .trae/memory/*.md 2>/dev/null
+        exit 1
+      fi
+
+  - type: code
+    name: agents-md-updated
+    check: file_contains
+    path: AGENTS.md
+    pattern: "@\\.trae/memory/"
+
+teardown:
+  - |
+    bash "$HOME/.agents/skills/execute-coco/scripts/teardown_sandbox.sh" \
+      --sandbox-dir /tmp/coco-sandbox/eval-c6 2>/dev/null || true

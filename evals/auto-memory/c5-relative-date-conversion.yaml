@@ -1,0 +1,81 @@
+# C5: Relative date → absolute date conversion
+#
+# The auto-memory template says:
+#   "Always convert relative dates to absolute dates
+#    (e.g. 'next Thursday' → '2026-04-17')."
+#
+# The prompt uses only relative references ("this Friday", "next week").
+# Expected: memory file converts them to absolute dates (2026-04-17, 2026-04-20, etc.)
+
+id: c5-relative-date-conversion
+name: "C5: Convert relative dates to absolute in project memory"
+source: coco
+binary: ~/.local/bin/trae-cli-eval
+cwd: /tmp/coco-sandbox/eval-c5
+trials: 3
+timeout_s: 120
+difficulty: medium
+capability: auto-memory
+tags: [auto-memory, c5, positive, project, date-conversion]
+
+setup:
+  - |
+    SKILL_DIR="$HOME/.agents/skills/execute-coco"
+    if [ -d /tmp/coco-sandbox/eval-c5 ]; then
+      bash "$SKILL_DIR/scripts/teardown_sandbox.sh" --sandbox-dir /tmp/coco-sandbox/eval-c5 2>/dev/null || true
+    fi
+    bash "$SKILL_DIR/scripts/setup_sandbox.sh" --template files --name eval-c5
+  - |
+    cd /tmp/coco-sandbox/eval-c5
+    mkdir -p .trae
+    cat > AGENTS.md << 'EOF'
+    # Test Project
+
+    <!-- auto-memory-start -->
+    <!-- auto-memory-end -->
+    EOF
+    git add -A && git commit -q -m "Prepare for eval"
+
+prompt: "Remember: the backend team is doing a deploy freeze starting this Friday through next week because of the quarterly compliance audit"
+
+graders:
+  - type: code
+    name: memory-file-exists
+    check: command
+    command: "ls .trae/memory/*.md 2>/dev/null | head -1"
+
+  - type: code
+    name: memory-type-project
+    check: command
+    command: "grep -r 'type: project' .trae/memory/"
+
+  - type: code
+    name: date-is-absolute
+    check: command
+    command: |
+      # Memory should contain an absolute date (YYYY-MM-DD or "April NN" etc.)
+      # and should NOT rely solely on relative terms like "this Friday"
+      MEM_DIR=".trae/memory"
+      if ! ls $MEM_DIR/*.md 1>/dev/null 2>&1; then
+        echo "FAIL: no memory files"
+        exit 1
+      fi
+      # Check for any absolute date pattern (YYYY-MM-DD, Month DD, DD Month)
+      if grep -rEi '20[0-9]{2}[/-][0-9]{2}[/-][0-9]{2}|April [0-9]+|[0-9]+ April|Apr [0-9]+' $MEM_DIR/; then
+        echo "PASS: Found absolute date"
+        exit 0
+      fi
+      echo "FAIL: No absolute date found in memory files"
+      cat $MEM_DIR/*.md
+      exit 1
+
+  - type: code
+    name: agents-md-updated
+    check: file_contains
+    path: AGENTS.md
+    pattern: "@\\.trae/memory/"
+
+teardown:
+  - |
+    bash "$HOME/.agents/skills/execute-coco/scripts/teardown_sandbox.sh" \
+      --sandbox-dir /tmp/coco-sandbox/eval-c5 2>/dev/null || true
