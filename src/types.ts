@@ -199,6 +199,14 @@ export interface EvalTask {
   trials?: number;
   difficulty?: "easy" | "medium" | "hard";
   capability?: string;  // e.g. "bug-fix", "refactor", "new-feature"
+
+  /** Session source: "claude" (default) or "coco". Controls binary, args, and session parsing. */
+  source?: "claude" | "coco";
+  /** Custom binary path. Defaults to "claude" or "coco" based on source. */
+  binary?: string;
+  /** Multi-turn prompts: each entry is a separate session invocation.
+   *  When specified, `prompt` is used for the final (graded) session only. */
+  prompts?: string[];
 }
 
 /** 评分器配置 */

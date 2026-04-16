@@ -1,11 +1,12 @@
 import { execSync, spawn as nodeSpawn } from "child_process";
 import { randomUUID } from "crypto";
-import { homedir } from "os";
+import { homedir, platform } from "os";
 import { join } from "path";
 import { stat } from "fs/promises";
 import chalk from "chalk";
 import type { EvalTask, TrialResult, EvalSessionMetrics } from "./types.js";
 import { parseSessionFile } from "./parser.js";
+import { parseCocoSession } from "./coco-parser.js";
 import { extractMetrics } from "./metrics.js";
 import { runGraders } from "./grader.js";
 
@@ -21,47 +22,75 @@ export async function runTrial(
   const model = modelOverride ?? task.model ?? "sonnet";
   const startTime = Date.now();
 
-  // 1. Setup
+  // 1. Setup — run from home dir since task.cwd may not exist yet (setup creates it)
   if (task.setup?.length) {
     for (const cmd of task.setup) {
       try {
-        execSync(cmd, { cwd: task.cwd, stdio: "pipe", timeout: 60_000 });
+        execSync(cmd, { cwd: homedir(), stdio: "pipe", timeout: 60_000 });
       } catch (err: any) {
         return makeErrorResult(task, trialIndex, sessionId, `Setup failed: ${cmd}\n${err.message}`);
       }
     }
   }
 
-  // 2. Build claude command
-  const args = buildClaudeArgs(task, sessionId, model);
-
-  // 3. Execute claude -p
+  // 2. Build command and execute
+  const binary = getBinary(task);
+  const timeoutMs = (task.timeout_s ?? 300) * 1000;
   let claudeOutput: string;
   let claudeError = "";
+
   try {
-    claudeOutput = await spawnClaude(args, task.cwd, (task.timeout_s ?? 300) * 1000);
+    // Multi-turn: run preliminary prompts first (ungraded)
+    if (task.prompts?.length) {
+      for (const p of task.prompts) {
+        const prelimId = randomUUID();
+        const prelimArgs = buildArgs({ ...task, prompt: p }, prelimId, model);
+        await spawnBinary(binary, prelimArgs, task.cwd, timeoutMs);
+      }
+    }
+
+    // Run the main (graded) prompt
+    const args = buildArgs(task, sessionId, model);
+    claudeOutput = await spawnBinary(binary, args, task.cwd, timeoutMs);
   } catch (err: any) {
     claudeError = err.message ?? String(err);
     claudeOutput = "";
   }
 
-  // 4. Locate JSONL file
-  const jsonlPath = findSessionJsonl(task.cwd, sessionId);
+  // 4. Locate session data and extract metrics
   let metrics: EvalSessionMetrics;
   let transcriptExists = false;
 
-  try {
-    await stat(jsonlPath);
-    transcriptExists = true;
-    const entries = await parseSessionFile(jsonlPath);
-    metrics = extractMetrics(entries, sessionId);
-  } catch {
-    metrics = emptyMetrics(sessionId, model, Date.now() - startTime);
+  if (task.source === "coco") {
+    const sessionDir = findCocoSessionDir(sessionId);
+    try {
+      await stat(sessionDir);
+      transcriptExists = true;
+      const { entries } = await parseCocoSession(sessionDir);
+      metrics = extractMetrics(entries, sessionId);
+    } catch {
+      metrics = emptyMetrics(sessionId, model, Date.now() - startTime);
+    }
+  } else {
+    const jsonlPath = findSessionJsonl(task.cwd, sessionId);
+    try {
+      await stat(jsonlPath);
+      transcriptExists = true;
+      const entries = await parseSessionFile(jsonlPath);
+      metrics = extractMetrics(entries, sessionId);
+    } catch {
+      metrics = emptyMetrics(sessionId, model, Date.now() - startTime);
+    }
   }
 
-  // 5. Run graders (only if task actually ran)
+  // 5. Resolve transcript path for graders
+  const transcriptPath = task.source === "coco"
+    ? join(findCocoSessionDir(sessionId), "events.jsonl")
+    : findSessionJsonl(task.cwd, sessionId);
+
+  // 6. Run graders (only if task actually ran)
   let graderResults = task.graders.length > 0 && transcriptExists
-    ? await runGraders(task.graders, task.cwd, jsonlPath)
+    ? await runGraders(task.graders, task.cwd, transcriptPath, task.source)
     : [];
 
   // If no graders defined, mark as passed if claude completed without error
@@ -97,8 +126,54 @@ export async function runTrial(
     passed,
     score,
     error: claudeError || undefined,
-    transcript_path: jsonlPath,
+    transcript_path: transcriptPath,
   };
+}
+
+function getBinary(task: EvalTask): string {
+  let bin = task.binary ?? (task.source === "coco" ? "coco" : "claude");
+  if (bin.startsWith("~/")) {
+    bin = join(homedir(), bin.slice(2));
+  }
+  return bin;
+}
+
+function buildArgs(
+  task: EvalTask,
+  sessionId: string,
+  model: string
+): string[] {
+  if (task.source === "coco") {
+    return buildCocoArgs(task, sessionId, model);
+  }
+  return buildClaudeArgs(task, sessionId, model);
+}
+
+function buildCocoArgs(
+  task: EvalTask,
+  sessionId: string,
+  model: string
+): string[] {
+  const args = [
+    "-p",
+    task.prompt,
+    "--session-id",
+    sessionId,
+    "--yolo",
+  ];
+
+  // Only override model if explicitly set in the task YAML (Coco uses its config default otherwise)
+  if (task.model) {
+    args.push("-c", `model.name=${model}`);
+  }
+
+  if (task.allowed_tools?.length) {
+    for (const t of task.allowed_tools) {
+      args.push("--allowed-tool", t);
+    }
+  }
+
+  return args;
 }
 
 function buildClaudeArgs(
@@ -131,13 +206,14 @@ function buildClaudeArgs(
   return args;
 }
 
-function spawnClaude(
+function spawnBinary(
+  binary: string,
   args: string[],
   cwd: string,
   timeoutMs: number
 ): Promise<string> {
   return new Promise((resolve, reject) => {
-    const proc = nodeSpawn("claude", args, {
+    const proc = nodeSpawn(binary, args, {
       cwd,
       stdio: ["pipe", "pipe", "pipe"],
       timeout: timeoutMs,
@@ -154,7 +230,7 @@ function spawnClaude(
     });
 
     proc.on("error", (err) => {
-      reject(new Error(`Failed to spawn claude: ${err.message}`));
+      reject(new Error(`Failed to spawn ${binary}: ${err.message}`));
     });
 
     proc.on("close", (code) => {
@@ -163,12 +239,24 @@ function spawnClaude(
       } else {
         reject(
           new Error(
-            `claude exited with code ${code}${stderr ? ": " + stderr.slice(0, 500) : ""}`
+            `${binary} exited with code ${code}${stderr ? ": " + stderr.slice(0, 500) : ""}`
           )
         );
       }
     });
   });
+}
+
+/**
+ * Find the Coco session directory based on session ID.
+ * Coco stores sessions at ~/Library/Caches/coco/sessions/{session-id}/ (macOS)
+ * or ~/.cache/coco/sessions/{session-id}/ (Linux).
+ */
+function findCocoSessionDir(sessionId: string): string {
+  const base = platform() === "darwin"
+    ? join(homedir(), "Library", "Caches", "coco", "sessions")
+    : join(homedir(), ".cache", "coco", "sessions");
+  return join(base, sessionId);
 }
 
 /**

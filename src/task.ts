@@ -60,6 +60,9 @@ function validateTask(raw: Record<string, unknown>, source: string): EvalTask {
     trials: (raw.trials as number) ?? 1,
     difficulty: raw.difficulty as EvalTask["difficulty"],
     capability: raw.capability as string | undefined,
+    source: raw.source as EvalTask["source"],
+    binary: raw.binary as string | undefined,
+    prompts: asStringArray(raw.prompts),
   };
 }
 

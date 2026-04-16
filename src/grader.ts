@@ -1,6 +1,7 @@
-import { execSync } from "child_process";
+import { execSync, spawnSync } from "child_process";
+import { existsSync } from "fs";
 import { readFile, stat } from "fs/promises";
-import { join } from "path";
+import { dirname, join } from "path";
 import type {
   GraderConfig,
   GraderResult,
@@ -9,14 +10,17 @@ import type {
   SessionEntry,
 } from "./types.js";
 import { parseSessionFile } from "./parser.js";
+import { parseCocoSession } from "./coco-parser.js";
 
 /**
  * Run all graders for a task and return results.
+ * @param source - "claude" or "coco", determines transcript parsing strategy
  */
 export async function runGraders(
   graders: GraderConfig[],
   cwd: string,
-  transcriptPath: string
+  transcriptPath: string,
+  source?: "claude" | "coco"
 ): Promise<GraderResult[]> {
   const results: GraderResult[] = [];
 
@@ -24,7 +28,7 @@ export async function runGraders(
     if (g.type === "code") {
       results.push(await runCodeGrader(g, cwd));
     } else if (g.type === "llm") {
-      results.push(await runLLMGrader(g, transcriptPath));
+      results.push(await runLLMGrader(g, transcriptPath, source));
     }
   }
 
@@ -117,13 +121,21 @@ async function runCodeGrader(
 
 async function runLLMGrader(
   g: LLMGraderConfig,
-  transcriptPath: string
+  transcriptPath: string,
+  source?: "claude" | "coco"
 ): Promise<GraderResult> {
   const base = { name: g.name, type: "llm" as const };
 
   try {
-    // Extract readable transcript
-    const entries = await parseSessionFile(transcriptPath);
+    // Extract readable transcript — use appropriate parser based on source
+    let entries: SessionEntry[];
+    if (source === "coco") {
+      const sessionDir = dirname(transcriptPath); // events.jsonl → session dir
+      const { entries: cocoEntries } = await parseCocoSession(sessionDir);
+      entries = cocoEntries;
+    } else {
+      entries = await parseSessionFile(transcriptPath);
+    }
     const transcript = extractReadableTranscript(entries);
 
     // Build grading prompt
@@ -135,14 +147,24 @@ async function runLLMGrader(
       gradingPrompt +
       '\n\nRespond with ONLY a JSON object: {"score": <0.0 to 1.0>, "reason": "<brief explanation>"}';
 
-    // Call claude -p for grading
-    const model = g.model ?? "sonnet";
-    const output = execSync(
-      `claude -p ${JSON.stringify(fullPrompt)} --model ${model} --output-format text --dangerously-skip-permissions`,
-      { stdio: "pipe", timeout: 120_000 }
-    );
+    // Call LLM for grading — prefer coco for coco-source evals, claude otherwise
+    const gradeBinary = findGradingBinary(source);
+    const gradeArgs = buildGradingArgs(gradeBinary, fullPrompt, g.model);
+    const result = spawnSync(gradeBinary, gradeArgs, {
+      stdio: "pipe",
+      timeout: 120_000,
+    });
 
-    const text = output.toString().trim();
+    if (result.error) {
+      throw result.error;
+    }
+    if (result.status !== 0 && result.status !== null) {
+      throw new Error(
+        `${gradeBinary} exited with code ${result.status}: ${result.stderr?.toString().slice(0, 300)}`
+      );
+    }
+
+    const text = result.stdout.toString().trim();
     // Extract JSON from response (may be wrapped in markdown code block)
     const jsonMatch = text.match(/\{[\s\S]*"score"[\s\S]*\}/);
     if (!jsonMatch) {
@@ -182,10 +204,13 @@ export function extractReadableTranscript(entries: SessionEntry[]): string {
           if (block.type === "text") {
             lines.push(`[User] ${block.text}`);
           } else if (block.type === "tool_result") {
+            const rawContent = block.content;
             const content =
-              typeof block.content === "string"
-                ? block.content
-                : JSON.stringify(block.content);
+              rawContent === undefined || rawContent === null
+                ? ""
+                : typeof rawContent === "string"
+                  ? rawContent
+                  : JSON.stringify(rawContent);
             const truncated =
               content.length > MAX_RESULT_LEN
                 ? content.slice(0, MAX_RESULT_LEN) + "...(truncated)"
@@ -222,4 +247,40 @@ export function extractReadableTranscript(entries: SessionEntry[]): string {
     return full.slice(0, 50_000) + "\n...(transcript truncated)";
   }
   return full;
+}
+
+/**
+ * Find the best available binary for LLM grading.
+ * For coco-source evals, prefer coco (avoids claude model-access issues).
+ * For claude-source evals, prefer claude.
+ */
+function findGradingBinary(source?: "claude" | "coco"): string {
+  const order = source === "coco"
+    ? ["coco", "claude"]
+    : ["claude", "coco"];
+
+  for (const bin of order) {
+    try {
+      execSync(`which ${bin}`, { stdio: "pipe" });
+      return bin;
+    } catch {
+      // not found, try next
+    }
+  }
+  const symlink = join(process.env.HOME ?? "", ".local", "bin", "trae-cli-eval");
+  if (existsSync(symlink)) return symlink;
+  return order[0]; // will fail with a clear error
+}
+
+/**
+ * Build CLI args for the grading binary.
+ * Returns an array of arguments (for spawnSync, avoids shell escaping issues).
+ */
+function buildGradingArgs(binary: string, prompt: string, model?: string): string[] {
+  if (binary.includes("claude")) {
+    const m = model ?? "sonnet";
+    return ["-p", prompt, "--model", m, "--output-format", "text", "--dangerously-skip-permissions"];
+  }
+  // coco: use -p and --yolo, no --model flag
+  return ["-p", prompt, "--yolo"];
 }
