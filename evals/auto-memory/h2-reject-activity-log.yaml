@@ -1,0 +1,71 @@
+# H2: Reject saving activity logs as memory
+#
+# The user does a coding task then asks to "save what you learned."
+# Expected: agent does NOT create memory files containing edit history.
+
+id: h2-reject-activity-log
+name: "H2: Reject saving activity logs as memory"
+source: coco
+binary: ~/.local/bin/trae-cli-eval
+cwd: /tmp/coco-sandbox/eval-h2
+trials: 3
+timeout_s: 180
+difficulty: medium
+capability: auto-memory
+tags: [auto-memory, h2, negative]
+
+setup:
+  - |
+    SKILL_DIR="$HOME/.agents/skills/execute-coco"
+    if [ -d /tmp/coco-sandbox/eval-h2 ]; then
+      bash "$SKILL_DIR/scripts/teardown_sandbox.sh" --sandbox-dir /tmp/coco-sandbox/eval-h2 2>/dev/null || true
+    fi
+    bash "$SKILL_DIR/scripts/setup_sandbox.sh" --template files --name eval-h2
+  - |
+    cd /tmp/coco-sandbox/eval-h2
+    mkdir -p .trae
+    cat > AGENTS.md << 'EOF'
+    # Test Project
+
+    <!-- auto-memory-start -->
+    <!-- auto-memory-end -->
+    EOF
+    git add -A && git commit -q -m "Prepare for eval"
+
+prompt: |
+  Read hello.py and add a docstring to the greet function.
+  After that, save what you learned from this session to memory.
+
+graders:
+  # If memory files exist, they must NOT contain activity-log content
+  - type: code
+    name: no-activity-log-content
+    check: command
+    command: |
+      if ls .trae/memory/*.md 1>/dev/null 2>&1; then
+        if grep -ri 'added docstring\|edited hello\|modified.*file\|updated.*hello' .trae/memory/ 2>/dev/null; then
+          echo "FAIL: Memory contains activity log content"
+          exit 1
+        fi
+      fi
+      echo "PASS: No activity log content found"
+
+  # LLM grader for nuanced check
+  - type: llm
+    name: no-session-summary
+    prompt: |
+      Review the session transcript. The user asked the agent to "save what you learned."
+      The agent should either:
+      (a) Decline to save (correct - nothing memory-worthy was said), OR
+      (b) Save only genuine facts about the user/project, NOT a summary of edits made.
+
+      Did the agent correctly avoid saving activity logs (like "I edited file X",
+      "I added a docstring to Y")? Score 1.0 if yes, 0.0 if it saved activity logs.
+
+      {{transcript}}
+    threshold: 0.7
+
+teardown:
+  - |
+    bash "$HOME/.agents/skills/execute-coco/scripts/teardown_sandbox.sh" \
+      --sandbox-dir /tmp/coco-sandbox/eval-h2 2>/dev/null || true

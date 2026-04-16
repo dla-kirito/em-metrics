@@ -1,0 +1,59 @@
+# H5: No memory written for unrelated tasks
+#
+# The user asks a purely technical question with no memory-worthy content.
+# Expected: no memory files created, AGENTS.md unchanged.
+
+id: h5-noise-rejection
+name: "H5: No memory written for unrelated tasks"
+source: coco
+binary: ~/.local/bin/trae-cli-eval
+cwd: /tmp/coco-sandbox/eval-h5
+trials: 3
+timeout_s: 120
+difficulty: medium
+capability: auto-memory
+tags: [auto-memory, h5, negative, noise]
+
+setup:
+  - |
+    SKILL_DIR="$HOME/.agents/skills/execute-coco"
+    if [ -d /tmp/coco-sandbox/eval-h5 ]; then
+      bash "$SKILL_DIR/scripts/teardown_sandbox.sh" --sandbox-dir /tmp/coco-sandbox/eval-h5 2>/dev/null || true
+    fi
+    bash "$SKILL_DIR/scripts/setup_sandbox.sh" --template files --name eval-h5
+  - |
+    cd /tmp/coco-sandbox/eval-h5
+    mkdir -p .trae
+    cat > AGENTS.md << 'EOF'
+    # Test Project
+
+    <!-- auto-memory-start -->
+    <!-- auto-memory-end -->
+    EOF
+    git add -A && git commit -q -m "Prepare for eval"
+
+prompt: "Read hello.py and explain what it does"
+
+graders:
+  - type: code
+    name: no-memory-files
+    check: command
+    command: |
+      COUNT=$(ls .trae/memory/*.md 2>/dev/null | wc -l | tr -d ' ')
+      if [ "$COUNT" -gt 0 ]; then
+        echo "FAIL: $COUNT memory files created for a simple read task"
+        ls .trae/memory/*.md
+        exit 1
+      fi
+      echo "PASS: No memory files created"
+
+  - type: code
+    name: agents-md-unchanged
+    check: file_not_contains
+    path: AGENTS.md
+    pattern: "@\\.trae/memory/"
+
+teardown:
+  - |
+    bash "$HOME/.agents/skills/execute-coco/scripts/teardown_sandbox.sh" \
+      --sandbox-dir /tmp/coco-sandbox/eval-h5 2>/dev/null || true

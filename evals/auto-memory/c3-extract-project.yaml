@@ -1,0 +1,64 @@
+# C3: Extract project-type memory with deadline info
+#
+# Coco extracts project state not derivable from code or git:
+#   goals, decision rationale, deadlines, incident context.
+# The template also says: "Always convert relative dates to absolute dates."
+# Expected: memory file with type=project, contains the date, AGENTS.md updated.
+
+id: c3-extract-project
+name: "C3: Extract project memory (deadline/freeze)"
+source: coco
+binary: ~/.local/bin/trae-cli-eval
+cwd: /tmp/coco-sandbox/eval-c3
+trials: 3
+timeout_s: 120
+difficulty: medium
+capability: auto-memory
+tags: [auto-memory, c3, positive, project]
+
+setup:
+  - |
+    SKILL_DIR="$HOME/.agents/skills/execute-coco"
+    if [ -d /tmp/coco-sandbox/eval-c3 ]; then
+      bash "$SKILL_DIR/scripts/teardown_sandbox.sh" --sandbox-dir /tmp/coco-sandbox/eval-c3 2>/dev/null || true
+    fi
+    bash "$SKILL_DIR/scripts/setup_sandbox.sh" --template files --name eval-c3
+  - |
+    cd /tmp/coco-sandbox/eval-c3
+    mkdir -p .trae
+    cat > AGENTS.md << 'EOF'
+    # Test Project
+
+    <!-- auto-memory-start -->
+    <!-- auto-memory-end -->
+    EOF
+    git add -A && git commit -q -m "Prepare for eval"
+
+prompt: "Remember: we're freezing all non-critical merges after 2026-04-20 for the mobile release branch cut"
+
+graders:
+  - type: code
+    name: memory-file-exists
+    check: command
+    command: "ls .trae/memory/*.md 2>/dev/null | head -1"
+
+  - type: code
+    name: memory-type-project
+    check: command
+    command: "grep -r 'type: project' .trae/memory/"
+
+  - type: code
+    name: memory-contains-date
+    check: command
+    command: "grep -r '2026-04-20\\|2026/04/20\\|April 20' .trae/memory/"
+
+  - type: code
+    name: agents-md-updated
+    check: file_contains
+    path: AGENTS.md
+    pattern: "@\\.trae/memory/"
+
+teardown:
+  - |
+    bash "$HOME/.agents/skills/execute-coco/scripts/teardown_sandbox.sh" \
+      --sandbox-dir /tmp/coco-sandbox/eval-c3 2>/dev/null || true

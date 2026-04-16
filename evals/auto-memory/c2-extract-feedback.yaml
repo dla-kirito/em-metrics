@@ -1,0 +1,65 @@
+# C2: Extract feedback-type memory from team-wide technical guidance
+#
+# Coco extracts feedback when ALL criteria are met:
+#   1. Applies to all contributors (not personal style)
+#   2. Concerns a technical decision
+#   3. Future sessions that ignore it would cause problems
+# Expected: memory file with type=feedback, AGENTS.md updated.
+
+id: c2-extract-feedback
+name: "C2: Extract feedback memory (team-wide guidance)"
+source: coco
+binary: ~/.local/bin/trae-cli-eval
+cwd: /tmp/coco-sandbox/eval-c2
+trials: 3
+timeout_s: 120
+difficulty: medium
+capability: auto-memory
+tags: [auto-memory, c2, positive, feedback]
+
+setup:
+  - |
+    SKILL_DIR="$HOME/.agents/skills/execute-coco"
+    if [ -d /tmp/coco-sandbox/eval-c2 ]; then
+      bash "$SKILL_DIR/scripts/teardown_sandbox.sh" --sandbox-dir /tmp/coco-sandbox/eval-c2 2>/dev/null || true
+    fi
+    bash "$SKILL_DIR/scripts/setup_sandbox.sh" --template files --name eval-c2
+  - |
+    cd /tmp/coco-sandbox/eval-c2
+    mkdir -p .trae
+    cat > AGENTS.md << 'EOF'
+    # Test Project
+
+    <!-- auto-memory-start -->
+    <!-- auto-memory-end -->
+    EOF
+    git add -A && git commit -q -m "Prepare for eval"
+
+prompt: "From now on in this repo, never use mocks for database tests — we got burned last quarter when mocked tests passed but the prod migration failed"
+
+graders:
+  - type: code
+    name: memory-file-exists
+    check: command
+    command: "ls .trae/memory/*.md 2>/dev/null | head -1"
+
+  - type: code
+    name: memory-type-feedback
+    check: command
+    command: "grep -r 'type: feedback' .trae/memory/"
+
+  - type: code
+    name: memory-contains-keyword
+    check: command
+    command: "grep -ri 'mock\\|database\\|migration' .trae/memory/"
+
+  - type: code
+    name: agents-md-updated
+    check: file_contains
+    path: AGENTS.md
+    pattern: "@\\.trae/memory/"
+
+teardown:
+  - |
+    bash "$HOME/.agents/skills/execute-coco/scripts/teardown_sandbox.sh" \
+      --sandbox-dir /tmp/coco-sandbox/eval-c2 2>/dev/null || true

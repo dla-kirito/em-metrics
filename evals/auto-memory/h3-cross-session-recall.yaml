@@ -1,0 +1,62 @@
+# H3: Cross-session recall
+#
+# Session 1 (in setup): saves a memory about staging server.
+# Session 2 (the graded prompt): asks about the staging server.
+# Expected: agent recalls the staging server address from memory.
+
+id: h3-cross-session-recall
+name: "H3: Memory recalled in a new session"
+source: coco
+binary: ~/.local/bin/trae-cli-eval
+cwd: /tmp/coco-sandbox/eval-h3
+trials: 3
+timeout_s: 240
+difficulty: medium
+capability: auto-memory
+tags: [auto-memory, h3, recall, multi-session]
+
+setup:
+  # 1. Create sandbox
+  - |
+    SKILL_DIR="$HOME/.agents/skills/execute-coco"
+    if [ -d /tmp/coco-sandbox/eval-h3 ]; then
+      bash "$SKILL_DIR/scripts/teardown_sandbox.sh" --sandbox-dir /tmp/coco-sandbox/eval-h3 2>/dev/null || true
+    fi
+    bash "$SKILL_DIR/scripts/setup_sandbox.sh" --template files --name eval-h3
+  - |
+    cd /tmp/coco-sandbox/eval-h3
+    mkdir -p .trae
+    cat > AGENTS.md << 'EOF'
+    # Test Project
+
+    <!-- auto-memory-start -->
+    <!-- auto-memory-end -->
+    EOF
+    git add -A && git commit -q -m "Prepare for eval"
+
+# Session 1: save a memory (preliminary, ungraded)
+prompts:
+  - "Remember that our staging server is at staging.internal.example.com:9090 and the deploy key is stored in Vault under secret/deploy/staging"
+
+# Session 2: recall (this is the graded session)
+prompt: "What is the staging server address for this project?"
+
+graders:
+  - type: llm
+    name: recall-accuracy
+    prompt: |
+      In this session, the user asked about the staging server address.
+      The correct answer is: staging.internal.example.com:9090
+
+      Did the agent correctly recall this information from its memory?
+      Score 1.0 if the agent mentioned the correct address.
+      Score 0.5 if it mentioned the server but got details wrong.
+      Score 0.0 if it didn't recall or said it doesn't know.
+
+      {{transcript}}
+    threshold: 0.7
+
+teardown:
+  - |
+    bash "$HOME/.agents/skills/execute-coco/scripts/teardown_sandbox.sh" \
+      --sandbox-dir /tmp/coco-sandbox/eval-h3 2>/dev/null || true

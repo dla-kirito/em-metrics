@@ -1,0 +1,99 @@
+# H4: Memory file has valid YAML frontmatter
+#
+# The user asks to remember something.
+# Expected: memory file has proper --- delimiters, name, description, type fields.
+
+id: h4-frontmatter-format
+name: "H4: Memory file has valid YAML frontmatter"
+source: coco
+binary: ~/.local/bin/trae-cli-eval
+cwd: /tmp/coco-sandbox/eval-h4
+trials: 3
+timeout_s: 120
+difficulty: easy
+capability: auto-memory
+tags: [auto-memory, h4, format]
+
+setup:
+  - |
+    SKILL_DIR="$HOME/.agents/skills/execute-coco"
+    if [ -d /tmp/coco-sandbox/eval-h4 ]; then
+      bash "$SKILL_DIR/scripts/teardown_sandbox.sh" --sandbox-dir /tmp/coco-sandbox/eval-h4 2>/dev/null || true
+    fi
+    bash "$SKILL_DIR/scripts/setup_sandbox.sh" --template files --name eval-h4
+  - |
+    cd /tmp/coco-sandbox/eval-h4
+    mkdir -p .trae
+    cat > AGENTS.md << 'EOF'
+    # Test Project
+
+    <!-- auto-memory-start -->
+    <!-- auto-memory-end -->
+    EOF
+    git add -A && git commit -q -m "Prepare for eval"
+
+prompt: "Remember that bugs are tracked in Linear project INFRA"
+
+graders:
+  - type: code
+    name: frontmatter-yaml-delimiters
+    check: command
+    command: |
+      for f in .trae/memory/*.md; do
+        [ -f "$f" ] || { echo "FAIL: no memory files"; exit 1; }
+        FIRST=$(head -1 "$f")
+        if [ "$FIRST" != "---" ]; then
+          echo "FAIL: $f doesn't start with ---"
+          exit 1
+        fi
+        if ! head -10 "$f" | tail -n +2 | grep -q '^---$'; then
+          echo "FAIL: $f missing closing --- delimiter"
+          exit 1
+        fi
+      done
+      echo "PASS"
+
+  - type: code
+    name: frontmatter-has-name
+    check: command
+    command: |
+      for f in .trae/memory/*.md; do
+        [ -f "$f" ] || { echo "FAIL: no memory files"; exit 1; }
+        if ! head -10 "$f" | grep -q '^name:'; then
+          echo "FAIL: $f missing name"
+          exit 1
+        fi
+      done
+      echo "PASS"
+
+  - type: code
+    name: frontmatter-has-description
+    check: command
+    command: |
+      for f in .trae/memory/*.md; do
+        [ -f "$f" ] || { echo "FAIL: no memory files"; exit 1; }
+        if ! head -10 "$f" | grep -q '^description:'; then
+          echo "FAIL: $f missing description"
+          exit 1
+        fi
+      done
+      echo "PASS"
+
+  - type: code
+    name: frontmatter-has-valid-type
+    check: command
+    command: |
+      for f in .trae/memory/*.md; do
+        [ -f "$f" ] || { echo "FAIL: no memory files"; exit 1; }
+        TYPE=$(head -10 "$f" | grep '^type:' | awk '{print $2}')
+        case "$TYPE" in
+          feedback|project|reference) ;;
+          *) echo "FAIL: $f has invalid type: $TYPE"; exit 1 ;;
+        esac
+      done
+      echo "PASS"
+
+teardown:
+  - |
+    bash "$HOME/.agents/skills/execute-coco/scripts/teardown_sandbox.sh" \
+      --sandbox-dir /tmp/coco-sandbox/eval-h4 2>/dev/null || true

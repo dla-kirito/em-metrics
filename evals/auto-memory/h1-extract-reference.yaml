@@ -1,0 +1,62 @@
+# H1: Extract reference memory from explicit user instruction
+#
+# The user explicitly asks to remember a CI URL.
+# Expected: agent creates a memory file with type=reference, updates AGENTS.md.
+
+id: h1-extract-reference
+name: "H1: Extract reference memory from user instruction"
+source: coco
+binary: ~/.local/bin/trae-cli-eval
+cwd: /tmp/coco-sandbox/eval-h1-ref
+trials: 3
+timeout_s: 120
+difficulty: easy
+capability: auto-memory
+tags: [auto-memory, h1, extract, positive]
+
+setup:
+  - |
+    SKILL_DIR="$HOME/.agents/skills/execute-coco"
+    if [ -d /tmp/coco-sandbox/eval-h1-ref ]; then
+      bash "$SKILL_DIR/scripts/teardown_sandbox.sh" --sandbox-dir /tmp/coco-sandbox/eval-h1-ref 2>/dev/null || true
+    fi
+    bash "$SKILL_DIR/scripts/setup_sandbox.sh" --template files --name eval-h1-ref
+  - |
+    cd /tmp/coco-sandbox/eval-h1-ref
+    mkdir -p .trae
+    cat > AGENTS.md << 'EOF'
+    # Test Project
+
+    <!-- auto-memory-start -->
+    <!-- auto-memory-end -->
+    EOF
+    git add -A && git commit -q -m "Prepare for eval"
+
+prompt: "Remember that our CI is at https://jenkins.example.com/job/test-project"
+
+graders:
+  - type: code
+    name: memory-file-exists
+    check: command
+    command: "ls .trae/memory/*.md 2>/dev/null | head -1"
+
+  - type: code
+    name: memory-contains-url
+    check: command
+    command: "grep -r 'jenkins.example.com' .trae/memory/"
+
+  - type: code
+    name: memory-has-frontmatter
+    check: command
+    command: "grep -l 'type: reference' .trae/memory/*.md"
+
+  - type: code
+    name: agents-md-updated
+    check: file_contains
+    path: AGENTS.md
+    pattern: "@\\.trae/memory/"
+
+teardown:
+  - |
+    bash "$HOME/.agents/skills/execute-coco/scripts/teardown_sandbox.sh" \
+      --sandbox-dir /tmp/coco-sandbox/eval-h1-ref 2>/dev/null || true

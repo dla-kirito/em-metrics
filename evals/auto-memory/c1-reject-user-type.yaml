@@ -1,0 +1,82 @@
+# C1: Coco rejects user-type memory extraction
+#
+# Coco's auto-memory template explicitly says:
+#   "user (personal information) — Do NOT extract."
+# The user shares purely personal info (background, career timeline).
+# Expected: NO memory files with type=user. No AGENTS.md update.
+
+id: c1-reject-user-type
+name: "C1: Reject user-type memory (Coco-specific)"
+source: coco
+binary: ~/.local/bin/trae-cli-eval
+cwd: /tmp/coco-sandbox/eval-c1
+trials: 3
+timeout_s: 120
+difficulty: medium
+capability: auto-memory
+tags: [auto-memory, c1, negative, coco-specific]
+
+setup:
+  - |
+    SKILL_DIR="$HOME/.agents/skills/execute-coco"
+    if [ -d /tmp/coco-sandbox/eval-c1 ]; then
+      bash "$SKILL_DIR/scripts/teardown_sandbox.sh" --sandbox-dir /tmp/coco-sandbox/eval-c1 2>/dev/null || true
+    fi
+    bash "$SKILL_DIR/scripts/setup_sandbox.sh" --template files --name eval-c1
+  - |
+    cd /tmp/coco-sandbox/eval-c1
+    mkdir -p .trae
+    cat > AGENTS.md << 'EOF'
+    # Test Project
+
+    <!-- auto-memory-start -->
+    <!-- auto-memory-end -->
+    EOF
+    git add -A && git commit -q -m "Prepare for eval"
+
+prompt: |
+  I joined the team 3 months ago. Before that I was at Google for 5 years working on distributed systems. My timezone is PST and I usually start work at 10am.
+
+graders:
+  - type: code
+    name: no-user-type-memory
+    check: command
+    command: |
+      if ls .trae/memory/*.md 1>/dev/null 2>&1; then
+        if grep -l 'type: user' .trae/memory/*.md 2>/dev/null; then
+          echo "FAIL: Found memory file with type=user (Coco should never save user type)"
+          exit 1
+        fi
+      fi
+      echo "PASS: No user-type memory files"
+
+  - type: code
+    name: agents-md-unchanged
+    check: file_not_contains
+    path: AGENTS.md
+    pattern: "@\\.trae/memory/"
+
+  - type: llm
+    name: user-type-rejection
+    prompt: |
+      Coco's auto-memory rules explicitly state:
+        "user (personal information) — Do NOT extract.
+         User role, background, and personal preferences belong to private memory.
+         Coco has no private storage tier; discard this information."
+
+      The user shared purely personal info: work history (Google, 5 years),
+      team tenure (3 months), timezone (PST), and work schedule (10am start).
+      None of this is a technical decision or project convention.
+
+      Did the agent correctly avoid saving user-type memory?
+      Score 1.0 if it saved NO memory at all (correct: nothing is team-relevant).
+      Score 0.7 if it saved some memory but NOT with type=user.
+      Score 0.0 if it saved memory with type=user.
+
+      {{transcript}}
+    threshold: 0.7
+
+teardown:
+  - |
+    bash "$HOME/.agents/skills/execute-coco/scripts/teardown_sandbox.sh" \
+      --sandbox-dir /tmp/coco-sandbox/eval-c1 2>/dev/null || true

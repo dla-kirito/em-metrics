@@ -1,0 +1,71 @@
+# C4: AGENTS.md uses auto-memory-start/end markers
+#
+# Coco's template specifies:
+#   - Index pointers go between <!-- auto-memory-start --> and <!-- auto-memory-end --> markers
+#   - Pointer format: - @.trae/memory/<type>_<topic>.md — <summary>
+# Expected: reference memory created, AGENTS.md has correct marker structure.
+
+id: c4-agents-md-markers
+name: "C4: AGENTS.md marker format validation"
+source: coco
+binary: ~/.local/bin/trae-cli-eval
+cwd: /tmp/coco-sandbox/eval-c4
+trials: 3
+timeout_s: 120
+difficulty: medium
+capability: auto-memory
+tags: [auto-memory, c4, structural, markers]
+
+setup:
+  - |
+    SKILL_DIR="$HOME/.agents/skills/execute-coco"
+    if [ -d /tmp/coco-sandbox/eval-c4 ]; then
+      bash "$SKILL_DIR/scripts/teardown_sandbox.sh" --sandbox-dir /tmp/coco-sandbox/eval-c4 2>/dev/null || true
+    fi
+    bash "$SKILL_DIR/scripts/setup_sandbox.sh" --template files --name eval-c4
+  - |
+    cd /tmp/coco-sandbox/eval-c4
+    mkdir -p .trae
+    cat > AGENTS.md << 'EOF'
+    # Test Project
+
+    <!-- auto-memory-start -->
+    <!-- auto-memory-end -->
+    EOF
+    git add -A && git commit -q -m "Prepare for eval"
+
+prompt: "Remember that our monitoring dashboard is at https://grafana.internal/d/api-latency"
+
+graders:
+  - type: code
+    name: memory-file-exists
+    check: command
+    command: "ls .trae/memory/*.md 2>/dev/null | head -1"
+
+  - type: code
+    name: agents-md-has-start-marker
+    check: file_contains
+    path: AGENTS.md
+    pattern: "<!-- auto-memory-start -->"
+
+  - type: code
+    name: agents-md-has-end-marker
+    check: file_contains
+    path: AGENTS.md
+    pattern: "<!-- auto-memory-end -->"
+
+  - type: code
+    name: agents-md-has-pointer
+    check: file_contains
+    path: AGENTS.md
+    pattern: "@\\.trae/memory/"
+
+  - type: code
+    name: memory-contains-url
+    check: command
+    command: "grep -r 'grafana.internal' .trae/memory/"
+
+teardown:
+  - |
+    bash "$HOME/.agents/skills/execute-coco/scripts/teardown_sandbox.sh" \
+      --sandbox-dir /tmp/coco-sandbox/eval-c4 2>/dev/null || true
