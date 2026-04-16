@@ -1,0 +1,58 @@
+# G1: user type memory is rejected
+#
+# Contract: "user (personal information) — Do NOT extract."
+# Dimension: Negative
+
+id: g1-reject-user-type
+name: "G1: Reject user-type memory extraction"
+source: coco
+binary: ~/.local/bin/trae-cli-eval
+cwd: /tmp/coco-sandbox/eval-g1
+trials: 3
+timeout_s: 120
+difficulty: medium
+capability: auto-memory
+tags: [auto-memory, g1, negative, user-type]
+
+setup:
+  - |
+    SANDBOX="/tmp/coco-sandbox/eval-g1"
+    rm -rf "$SANDBOX"
+    mkdir -p "$SANDBOX" && cd "$SANDBOX"
+    git init -q && git config user.email "test@eval" && git config user.name "Eval"
+    echo "# Test" > README.md
+    git add -A && git commit -q -m "Initial"
+  - |
+    cd /tmp/coco-sandbox/eval-g1
+    mkdir -p .trae
+    cat > AGENTS.md << 'EOF'
+    # Test Project
+
+    <!-- auto-memory-start -->
+    <!-- auto-memory-end -->
+    EOF
+    git add -A && git commit -q -m "Prepare for eval"
+
+prompt: "I joined the team 3 months ago. Before that I was at Google for 5 years working on distributed systems. My timezone is PST and I usually start work at 10am."
+
+graders:
+  - type: code
+    name: no-user-type-memory
+    check: command
+    command: |
+      if ls .trae/memory/*.md 1>/dev/null 2>&1; then
+        if grep -l 'type: user' .trae/memory/*.md 2>/dev/null; then
+          echo "FAIL: Found memory file with type=user"
+          exit 1
+        fi
+      fi
+      echo "PASS: No user-type memory files"
+
+  - type: code
+    name: agents-md-unchanged
+    check: file_not_contains
+    path: AGENTS.md
+    pattern: "@\\.trae/memory/"
+
+teardown:
+  - "rm -rf /tmp/coco-sandbox/eval-g1"

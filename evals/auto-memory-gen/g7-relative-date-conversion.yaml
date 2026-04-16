@@ -1,0 +1,68 @@
+# G7: relative dates converted to absolute
+#
+# Contract: "Always convert relative dates to absolute dates
+#            (e.g. 'next Thursday' → '2026-04-17')"
+# Dimension: Boundary
+
+id: g7-relative-date-conversion
+name: "G7: Relative dates converted to absolute in memory"
+source: coco
+binary: ~/.local/bin/trae-cli-eval
+cwd: /tmp/coco-sandbox/eval-g7
+trials: 3
+timeout_s: 120
+difficulty: medium
+capability: auto-memory
+tags: [auto-memory, g7, boundary, date-conversion]
+
+setup:
+  - |
+    SANDBOX="/tmp/coco-sandbox/eval-g7"
+    rm -rf "$SANDBOX"
+    mkdir -p "$SANDBOX" && cd "$SANDBOX"
+    git init -q && git config user.email "test@eval" && git config user.name "Eval"
+    echo "# Test" > README.md
+    git add -A && git commit -q -m "Initial"
+  - |
+    cd /tmp/coco-sandbox/eval-g7
+    mkdir -p .trae
+    cat > AGENTS.md << 'EOF'
+    # Test Project
+
+    <!-- auto-memory-start -->
+    <!-- auto-memory-end -->
+    EOF
+    git add -A && git commit -q -m "Prepare for eval"
+
+prompt: "Remember: the backend team is doing a deploy freeze starting this Friday through next week because of the quarterly compliance audit"
+
+graders:
+  - type: code
+    name: memory-file-exists
+    check: command
+    command: "ls .trae/memory/*.md 2>/dev/null | head -1"
+
+  - type: code
+    name: date-is-absolute
+    check: command
+    command: |
+      MEM_DIR=".trae/memory"
+      if ! ls $MEM_DIR/*.md 1>/dev/null 2>&1; then
+        echo "FAIL: no memory files"; exit 1
+      fi
+      if grep -rEi '20[0-9]{2}[/-][0-9]{2}[/-][0-9]{2}|April [0-9]+|[0-9]+ April|Apr [0-9]+' $MEM_DIR/; then
+        echo "PASS: Found absolute date"
+      else
+        echo "FAIL: No absolute date found"
+        cat $MEM_DIR/*.md
+        exit 1
+      fi
+
+  - type: code
+    name: agents-md-updated
+    check: file_contains
+    path: AGENTS.md
+    pattern: "@\\.trae/memory/"
+
+teardown:
+  - "rm -rf /tmp/coco-sandbox/eval-g7"

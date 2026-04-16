@@ -1,0 +1,57 @@
+# G4: reference memory extracted for external system pointer
+#
+# Contract: "reference — Almost always extract.
+#            External system paths (dashboards, issue trackers, Slack channels)"
+# Dimension: Positive
+
+id: g4-extract-reference
+name: "G4: Extract reference memory for external URL"
+source: coco
+binary: ~/.local/bin/trae-cli-eval
+cwd: /tmp/coco-sandbox/eval-g4
+trials: 3
+timeout_s: 120
+difficulty: easy
+capability: auto-memory
+tags: [auto-memory, g4, positive, reference]
+
+setup:
+  - |
+    SANDBOX="/tmp/coco-sandbox/eval-g4"
+    rm -rf "$SANDBOX"
+    mkdir -p "$SANDBOX" && cd "$SANDBOX"
+    git init -q && git config user.email "test@eval" && git config user.name "Eval"
+    echo "# Test" > README.md
+    git add -A && git commit -q -m "Initial"
+  - |
+    cd /tmp/coco-sandbox/eval-g4
+    mkdir -p .trae
+    cat > AGENTS.md << 'EOF'
+    # Test Project
+
+    <!-- auto-memory-start -->
+    <!-- auto-memory-end -->
+    EOF
+    git add -A && git commit -q -m "Prepare for eval"
+
+prompt: "Remember that our monitoring dashboard is at https://grafana.internal/d/api-latency"
+
+graders:
+  - type: code
+    name: memory-file-exists
+    check: command
+    command: "ls .trae/memory/*.md 2>/dev/null | head -1"
+
+  - type: code
+    name: memory-contains-url
+    check: command
+    command: "grep -r 'grafana.internal' .trae/memory/"
+
+  - type: code
+    name: agents-md-updated
+    check: file_contains
+    path: AGENTS.md
+    pattern: "@\\.trae/memory/"
+
+teardown:
+  - "rm -rf /tmp/coco-sandbox/eval-g4"

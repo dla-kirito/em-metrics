@@ -1,0 +1,62 @@
+# G5: noise rejection — no memory for unrelated tasks
+#
+# Contract: "What NOT to Save — Code patterns, naming conventions, architecture —
+#            readable from the codebase directly"
+# Dimension: Negative
+
+id: g5-noise-rejection
+name: "G5: No memory for routine code tasks"
+source: coco
+binary: ~/.local/bin/trae-cli-eval
+cwd: /tmp/coco-sandbox/eval-g5
+trials: 3
+timeout_s: 120
+difficulty: easy
+capability: auto-memory
+tags: [auto-memory, g5, negative, noise]
+
+setup:
+  - |
+    SANDBOX="/tmp/coco-sandbox/eval-g5"
+    rm -rf "$SANDBOX"
+    mkdir -p "$SANDBOX" && cd "$SANDBOX"
+    git init -q && git config user.email "test@eval" && git config user.name "Eval"
+    cat > hello.py << 'PYEOF'
+    def greet(name):
+        return f"Hello, {name}!"
+    PYEOF
+    git add -A && git commit -q -m "Initial"
+  - |
+    cd /tmp/coco-sandbox/eval-g5
+    mkdir -p .trae
+    cat > AGENTS.md << 'EOF'
+    # Test Project
+
+    <!-- auto-memory-start -->
+    <!-- auto-memory-end -->
+    EOF
+    git add -A && git commit -q -m "Prepare for eval"
+
+prompt: "Read hello.py and tell me what it does"
+
+graders:
+  - type: code
+    name: no-memory-files
+    check: command
+    command: |
+      COUNT=$(ls .trae/memory/*.md 2>/dev/null | wc -l | tr -d ' ')
+      if [ "$COUNT" -gt 0 ]; then
+        echo "FAIL: $COUNT memory files created for a simple read task"
+        ls .trae/memory/*.md
+        exit 1
+      fi
+      echo "PASS: No memory files created"
+
+  - type: code
+    name: agents-md-unchanged
+    check: file_not_contains
+    path: AGENTS.md
+    pattern: "@\\.trae/memory/"
+
+teardown:
+  - "rm -rf /tmp/coco-sandbox/eval-g5"

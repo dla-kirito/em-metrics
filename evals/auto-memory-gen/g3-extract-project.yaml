@@ -1,0 +1,62 @@
+# G3: project memory extracted with deadline info
+#
+# Contract: "project — Extract information not derivable from code or git history:
+#            goals, decision rationale, deadlines, incident context."
+# Dimension: Positive
+
+id: g3-extract-project
+name: "G3: Extract project memory with deadline"
+source: coco
+binary: ~/.local/bin/trae-cli-eval
+cwd: /tmp/coco-sandbox/eval-g3
+trials: 3
+timeout_s: 120
+difficulty: medium
+capability: auto-memory
+tags: [auto-memory, g3, positive, project]
+
+setup:
+  - |
+    SANDBOX="/tmp/coco-sandbox/eval-g3"
+    rm -rf "$SANDBOX"
+    mkdir -p "$SANDBOX" && cd "$SANDBOX"
+    git init -q && git config user.email "test@eval" && git config user.name "Eval"
+    echo "# Test" > README.md
+    git add -A && git commit -q -m "Initial"
+  - |
+    cd /tmp/coco-sandbox/eval-g3
+    mkdir -p .trae
+    cat > AGENTS.md << 'EOF'
+    # Test Project
+
+    <!-- auto-memory-start -->
+    <!-- auto-memory-end -->
+    EOF
+    git add -A && git commit -q -m "Prepare for eval"
+
+prompt: "Remember: we're freezing all non-critical merges after 2026-04-20 for the mobile release branch cut"
+
+graders:
+  - type: code
+    name: memory-file-exists
+    check: command
+    command: "ls .trae/memory/*.md 2>/dev/null | head -1"
+
+  - type: code
+    name: memory-type-project
+    check: command
+    command: "grep -r 'type: project' .trae/memory/"
+
+  - type: code
+    name: memory-contains-date
+    check: command
+    command: "grep -r '2026-04-20\\|2026/04/20\\|April 20' .trae/memory/"
+
+  - type: code
+    name: agents-md-updated
+    check: file_contains
+    path: AGENTS.md
+    pattern: "@\\.trae/memory/"
+
+teardown:
+  - "rm -rf /tmp/coco-sandbox/eval-g3"

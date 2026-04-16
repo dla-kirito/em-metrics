@@ -1,0 +1,62 @@
+# G2: feedback memory extracted from team-wide guidance
+#
+# Contract: "feedback — Extract only when ALL: applies to all contributors,
+#            technical decision, future sessions ignoring it causes problems"
+# Dimension: Positive
+
+id: g2-extract-feedback
+name: "G2: Extract feedback memory from team guidance"
+source: coco
+binary: ~/.local/bin/trae-cli-eval
+cwd: /tmp/coco-sandbox/eval-g2
+trials: 3
+timeout_s: 120
+difficulty: medium
+capability: auto-memory
+tags: [auto-memory, g2, positive, feedback]
+
+setup:
+  - |
+    SANDBOX="/tmp/coco-sandbox/eval-g2"
+    rm -rf "$SANDBOX"
+    mkdir -p "$SANDBOX" && cd "$SANDBOX"
+    git init -q && git config user.email "test@eval" && git config user.name "Eval"
+    echo "# Test" > README.md
+    git add -A && git commit -q -m "Initial"
+  - |
+    cd /tmp/coco-sandbox/eval-g2
+    mkdir -p .trae
+    cat > AGENTS.md << 'EOF'
+    # Test Project
+
+    <!-- auto-memory-start -->
+    <!-- auto-memory-end -->
+    EOF
+    git add -A && git commit -q -m "Prepare for eval"
+
+prompt: "From now on in this repo, never use mocks for database tests — we got burned last quarter when mocked tests passed but the prod migration failed"
+
+graders:
+  - type: code
+    name: memory-file-exists
+    check: command
+    command: "ls .trae/memory/*.md 2>/dev/null | head -1"
+
+  - type: code
+    name: memory-type-feedback
+    check: command
+    command: "grep -r 'type: feedback' .trae/memory/"
+
+  - type: code
+    name: memory-contains-keyword
+    check: command
+    command: "grep -ri 'mock\\|database\\|migration' .trae/memory/"
+
+  - type: code
+    name: agents-md-updated
+    check: file_contains
+    path: AGENTS.md
+    pattern: "@\\.trae/memory/"
+
+teardown:
+  - "rm -rf /tmp/coco-sandbox/eval-g2"
