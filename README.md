@@ -126,7 +126,7 @@ em eval trend --history results/ --task fix-bug
 
 **Token Efficiency** -- `tokens_per_loc`, `exploration_ratio`, `edit_precision`
 
-**Interaction Quality** -- `correction_count`, `files_re_edited`, `abandonment`
+**Interaction Quality** -- `user_followup_count`, `files_re_edited`, `abandonment`
 
 **Cache Health** -- `overall_cache_hit_rate`, `cache_hit_rate_trend`, `compact_count`
 

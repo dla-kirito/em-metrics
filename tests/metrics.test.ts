@@ -38,7 +38,7 @@ describe("extractMetrics", () => {
     expect(m.tool_breakdown["Edit"]).toEqual({ count: 1, errors: 0, rejections: 0 });
   });
 
-  it("increments correction_count on user text after end_turn", () => {
+  it("increments user_followup_count on user text after end_turn", () => {
     // Pattern: user asks → assistant does work (tool_use) → tool results →
     // assistant concludes (end_turn, no tools) → user follows up = correction
     const entries: SessionEntry[] = [
@@ -55,11 +55,11 @@ describe("extractMetrics", () => {
         stop_reason: "end_turn",
         timestamp: "2026-01-01T00:00:03Z",
       }),
-      // User follows up after assistant said end_turn = correction
+      // User follows up after assistant said end_turn = follow-up
       userText("actually do B", { timestamp: "2026-01-01T00:00:05Z" }),
     ];
     const m = extractMetrics(entries, "s2");
-    expect(m.correction_count).toBeGreaterThanOrEqual(1);
+    expect(m.user_followup_count).toBeGreaterThanOrEqual(1);
   });
 
   it("computes cache_hit_rate correctly", () => {
@@ -120,7 +120,7 @@ describe("extractMetrics", () => {
     expect(m.max_context_tokens).toBe(5300);
   });
 
-  it("counts correction_count even in single-turn session", () => {
+  it("counts user_followup_count even in single-turn session", () => {
     const entries: SessionEntry[] = [
       userText("fix A", { timestamp: "2026-01-01T00:00:00Z" }),
       assistant("m1", [], {
@@ -131,7 +131,7 @@ describe("extractMetrics", () => {
     ];
     const m = extractMetrics(entries, "s7");
     expect(m.api_calls).toBe(1);
-    expect(m.correction_count).toBe(1);
+    expect(m.user_followup_count).toBe(1);
   });
 });
 

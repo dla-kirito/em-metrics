@@ -345,7 +345,7 @@ export function processEntry(entry: SessionEntry, metrics: LiveMetrics): void {
       // Real correction: user sends a new message after agent said end_turn
       // (i.e., agent thought it was done, but user followed up with more instructions)
       if (metrics.last_entry_was_assistant && metrics.last_stop_reason === "end_turn") {
-        metrics.correction_count++;
+        metrics.user_followup_count++;
       }
     }
 
@@ -524,7 +524,7 @@ export function liveToFinal(live: LiveMetrics): EvalSessionMetrics {
     user_turns: live.user_turns,
     tool_rejections: live.tool_rejections,
     tool_errors: live.tool_errors,
-    correction_count: live.correction_count,
+    user_followup_count: live.user_followup_count,
     files_re_edited: Array.from(live.edit_file_counts.values()).filter((c) => c > 1).length,
     abandonment: live.stop_reason !== "end_turn" && live.stop_reason !== "" && live.stop_reason !== "tool_use",
     tokens_per_loc: computeTokensPerLoc(live),

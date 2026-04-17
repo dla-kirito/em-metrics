@@ -73,7 +73,7 @@ export interface EvalSessionMetrics {
   user_turns: number;             // user messages with real text (not tool_result)
   tool_rejections: number;        // user rejected tool calls
   tool_errors: number;            // tool calls that returned errors
-  correction_count: number;       // user follow-ups after agent said end_turn (real corrections)
+  user_followup_count: number;     // user messages after agent said end_turn (follow-ups, may or may not be corrections)
   files_re_edited: number;        // Edit calls to same file_path (rework)
   abandonment: boolean;           // session ended abnormally (not end_turn, not tool_use)
 
@@ -216,7 +216,7 @@ export interface LiveMetrics {
   user_turns: number;
   tool_rejections: number;
   tool_errors: number;
-  correction_count: number;
+  user_followup_count: number;
   /** Track which files have been edited, for re-edit detection */
   edit_file_counts: Map<string, number>;
   /** Was the last entry type assistant? (for correction detection) */
@@ -453,7 +453,7 @@ export function createEmptyLiveMetrics(sessionId: string): LiveMetrics {
     user_turns: 0,
     tool_rejections: 0,
     tool_errors: 0,
-    correction_count: 0,
+    user_followup_count: 0,
     edit_file_counts: new Map(),
     last_entry_was_assistant: false,
     last_stop_reason: "",

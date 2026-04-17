@@ -40,11 +40,11 @@ export function printMetrics(m: EvalSessionMetrics, detail?: boolean): void {
   console.log(`  Stop:     ${m.stop_reason || "unknown"}`);
 
   // User interaction quality
-  if (m.user_messages > 0 || m.tool_errors > 0 || m.correction_count > 0) {
+  if (m.user_messages > 0 || m.tool_errors > 0 || m.user_followup_count > 0) {
     console.log(chalk.bold("  Interaction:"));
     console.log(`    User turns:  ${m.user_turns}`);
-    if (m.correction_count > 0) {
-      console.log(`    Corrections: ${m.correction_count} (follow-ups after end_turn)`);
+    if (m.user_followup_count > 0) {
+      console.log(`    User follow-ups: ${m.user_followup_count} (after end_turn)`);
     }
     if (m.tool_errors > 0) {
       console.log(`    Tool errors: ${chalk.red(String(m.tool_errors))}`);

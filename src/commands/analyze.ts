@@ -23,7 +23,7 @@ export function printAnalysis(allMetrics: EvalSessionMetrics[]): void {
   const activeDurations = allMetrics.map((m) => m.active_duration_ms);
   const cacheRates = allMetrics.map((m) => m.overall_cache_hit_rate);
   const costs = allMetrics.map((m) => m.cost_usd);
-  const corrections = allMetrics.map((m) => m.correction_count);
+  const followups = allMetrics.map((m) => m.user_followup_count);
   const userTurns = allMetrics.map((m) => m.user_turns);
   const toolErrors = allMetrics.map((m) => m.tool_errors);
   const reEdited = allMetrics.map((m) => m.files_re_edited);
@@ -122,7 +122,7 @@ export function printAnalysis(allMetrics: EvalSessionMetrics[]): void {
   // ── Interaction quality ──
   console.log(chalk.bold("\n  Interaction:"));
   console.log(`    User turns:      ${col(String(sum(userTurns)), 6)} total  avg ${avg(userTurns).toFixed(1)}  med ${med(userTurns).toFixed(0)}`);
-  console.log(`    Corrections:     ${col(String(sum(corrections)), 6)} total  avg ${avg(corrections).toFixed(1)}  med ${med(corrections).toFixed(0)}  p90 ${p90(corrections)}`);
+  console.log(`    User follow-ups: ${col(String(sum(followups)), 6)} total  avg ${avg(followups).toFixed(1)}  med ${med(followups).toFixed(0)}  p90 ${p90(followups)}  ${chalk.dim("(after end_turn; not necessarily corrections)")}`);
   const totalRejections = sum(allMetrics.map((m) => m.tool_rejections));
   const runtimeErrors = allMetrics.map((m) => m.tool_errors - m.tool_rejections);
   console.log(`    Tool errors:     ${col(String(sum(runtimeErrors)), 6)} total  avg ${avg(runtimeErrors).toFixed(1)}  med ${med(runtimeErrors).toFixed(0)}  p90 ${p90(runtimeErrors)}  ${chalk.dim("(runtime failures, rejections excluded)")}`);

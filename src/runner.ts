@@ -314,7 +314,7 @@ function emptyMetrics(
     user_turns: 0,
     tool_rejections: 0,
     tool_errors: 0,
-    correction_count: 0,
+    user_followup_count: 0,
     files_re_edited: 0,
     abandonment: true,
     tokens_per_loc: null,
