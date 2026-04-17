@@ -10,9 +10,98 @@ import { createEmptyLiveMetrics } from "./types.js";
 import { isAssistantWithUsage } from "./parser.js";
 
 import { computeCostUsd } from "./pricing.js";
+import { med, p90 } from "./stats.js";
 
 /** Idle gap threshold: gaps longer than this are excluded from active_duration */
 const IDLE_THRESHOLD_MS = 30_000;
+
+/**
+ * Parse an MCP-prefixed tool name of the form `mcp__<server>__<tool...>`.
+ * Splits on double-underscore; the tool segment may itself contain underscores.
+ * Returns null for names that are not MCP-prefixed.
+ */
+export function parseMcpToolName(
+  name: string
+): { server: string; tool: string } | null {
+  if (!name.startsWith("mcp__")) return null;
+  const parts = name.split("__");
+  if (parts.length < 3) return null;
+  const server = parts[1];
+  if (!server) return null;
+  const tool = parts.slice(2).join("__");
+  return { server, tool };
+}
+
+/** Bucket a mainchain turn count into the shot histogram buckets. */
+export function computeShotBucket(
+  mainchainTurns: number
+): "1" | "2-4" | "5-10" | "10+" {
+  if (mainchainTurns <= 1) return "1";
+  if (mainchainTurns <= 4) return "2-4";
+  if (mainchainTurns <= 10) return "5-10";
+  return "10+";
+}
+
+/**
+ * Normalize a file path to an extension key for distribution reporting.
+ * Handles: Makefile/Dockerfile → lowercase basename; foo.d.ts → ".d.ts";
+ * foo.test.ts → ".ts"; .gitignore → ".gitignore"; no-extension → "(none)".
+ */
+export function normalizeFileExt(filePath: string): string {
+  const base = filePath.split("/").pop() ?? filePath;
+  const lower = base.toLowerCase();
+
+  // Well-known extension-less filenames
+  if (lower === "makefile" || lower === "dockerfile" || lower === "readme") {
+    return lower;
+  }
+
+  // Dotfile (e.g. .gitignore, .env) — no further extension
+  if (lower.startsWith(".") && !lower.slice(1).includes(".")) {
+    return lower;
+  }
+
+  // Compound .d.ts
+  if (lower.endsWith(".d.ts")) return ".d.ts";
+
+  const dot = lower.lastIndexOf(".");
+  if (dot <= 0) return "(none)";
+  return lower.slice(dot);
+}
+
+/**
+ * Count cache breaks on the main chain: transitions where a turn with
+ * cache_read_tokens>0 is followed by one with cache_read_tokens===0.
+ * Skips the first turn (cold start) and excludes sidechain turns.
+ */
+export function countCacheBreaks(turns: TurnMetrics[]): number {
+  const main = turns.filter((t) => !t.is_sidechain);
+  let breaks = 0;
+  for (let i = 1; i < main.length; i++) {
+    if (main[i - 1].cache_read_tokens > 0 && main[i].cache_read_tokens === 0) {
+      breaks++;
+    }
+  }
+  return breaks;
+}
+
+/**
+ * Detect whether a user tool_result represents a user rejection (not a runtime error).
+ * Claude Code writes a recognizable sentinel text when a tool is denied.
+ */
+export function isRejectionResult(content: unknown): boolean {
+  let text = "";
+  if (typeof content === "string") {
+    text = content;
+  } else if (Array.isArray(content)) {
+    for (const b of content) {
+      if (b && typeof b === "object" && "text" in b) {
+        text += String((b as { text: unknown }).text ?? "");
+      }
+    }
+  }
+  return /user doesn't want to proceed|tool use was rejected/i.test(text);
+}
 
 /**
  * Process a single entry and update live metrics in-place.
@@ -33,6 +122,15 @@ export function processEntry(entry: SessionEntry, metrics: LiveMetrics): void {
   // Session ID from permission-mode entry
   if (entry.type === "permission-mode" && "sessionId" in entry) {
     metrics.session_id = (entry as any).sessionId;
+    if ("permissionMode" in entry) {
+      metrics.permission_mode = String((entry as any).permissionMode ?? "");
+    }
+  }
+
+  // Count user messages here; assistant messages are counted below under
+  // the isNewMessage guard to match dedup semantics for streaming.
+  if (entry.type === "user") {
+    metrics.message_count++;
   }
 
   // Assistant messages
@@ -59,6 +157,26 @@ export function processEntry(entry: SessionEntry, metrics: LiveMetrics): void {
       metrics.total_cache_creation_tokens +=
         usage.cache_creation_input_tokens ?? 0;
 
+      metrics.message_count++;
+
+      // Accumulate server-side tool usage (e.g. web_search_requests)
+      if (usage.server_tool_use) {
+        for (const [k, v] of Object.entries(usage.server_tool_use)) {
+          if (typeof v === "number") {
+            metrics.server_tool_usage[k] = (metrics.server_tool_usage[k] ?? 0) + v;
+          }
+        }
+      }
+
+      // Per-model usage (for multi-model sessions)
+      const modelKey = msg.model ?? "unknown";
+      if (!metrics.model_usage[modelKey]) {
+        metrics.model_usage[modelKey] = { calls: 0, input_tokens: 0, output_tokens: 0 };
+      }
+      metrics.model_usage[modelKey].calls++;
+      metrics.model_usage[modelKey].input_tokens += usage.input_tokens;
+      metrics.model_usage[modelKey].output_tokens += usage.output_tokens;
+
       // Track max context size (input + cache_read + cache_creation all occupy the context window)
       const contextTokens = usage.input_tokens + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0);
       if (contextTokens > metrics.max_context_tokens) {
@@ -79,11 +197,15 @@ export function processEntry(entry: SessionEntry, metrics: LiveMetrics): void {
         metrics.last_stop_reason = msg.stop_reason;
       }
 
-      // Collect tool names for this turn
+      // Collect tool names for this turn; accumulate output/thinking char counts
       const turnTools: string[] = [];
       for (const block of msg.content) {
         if (block.type === "tool_use") {
           turnTools.push(block.name);
+        } else if (block.type === "text" && "text" in block) {
+          metrics.output_chars_total += (block.text ?? "").length;
+        } else if (block.type === "thinking" && "thinking" in block) {
+          metrics.thinking_chars_total += (block.thinking ?? "").length;
         }
       }
 
@@ -134,6 +256,20 @@ export function processEntry(entry: SessionEntry, metrics: LiveMetrics): void {
           metrics.tool_calls[toolName].count++;
           metrics.total_tool_calls++;
           metrics.last_tool = toolName;
+
+          // MCP accounting
+          const mcp = parseMcpToolName(toolName);
+          if (mcp) {
+            metrics.mcp_tool_calls++;
+            metrics.mcp_servers_used.add(mcp.server);
+          }
+
+          // Sample tool_use input size (UTF-16 chars via JSON.stringify)
+          try {
+            metrics.tool_use_chars_samples.push(JSON.stringify(block.input ?? {}).length);
+          } catch {
+            // circular refs etc — skip sampling
+          }
 
           const input = block.input as Record<string, unknown>;
           if (input.file_path) {
@@ -215,14 +351,34 @@ export function processEntry(entry: SessionEntry, metrics: LiveMetrics): void {
 
     if (msg?.content && Array.isArray(msg.content)) {
       for (const block of msg.content as ContentBlock[]) {
-        if (block.type === "tool_result" && block.is_error) {
-          metrics.tool_errors++;
-          if (metrics.last_tool && metrics.tool_calls[metrics.last_tool]) {
-            metrics.tool_calls[metrics.last_tool].errors++;
+        if (block.type === "tool_result") {
+          // Sample tool_result content size
+          const rc = block.content;
+          let chars = 0;
+          if (typeof rc === "string") {
+            chars = rc.length;
+          } else if (Array.isArray(rc)) {
+            for (const sub of rc) {
+              if (sub && typeof sub === "object" && "text" in sub) {
+                chars += String((sub as { text: unknown }).text ?? "").length;
+              }
+            }
           }
-          // Mark last turn as having an error
-          if (metrics.turns_detail.length > 0) {
-            metrics.turns_detail[metrics.turns_detail.length - 1].has_tool_error = true;
+          metrics.tool_result_chars_samples.push(chars);
+
+          if (block.is_error) {
+            metrics.tool_errors++;
+            if (metrics.last_tool && metrics.tool_calls[metrics.last_tool]) {
+              metrics.tool_calls[metrics.last_tool].errors++;
+            }
+            // Mark last turn as having an error
+            if (metrics.turns_detail.length > 0) {
+              metrics.turns_detail[metrics.turns_detail.length - 1].has_tool_error = true;
+            }
+            // Distinguish user rejections from runtime errors
+            if (isRejectionResult(rc)) {
+              metrics.tool_rejections++;
+            }
           }
         }
       }
@@ -338,6 +494,8 @@ export function liveToFinal(live: LiveMetrics): EvalSessionMetrics {
     api_retries: 0,
     total_tool_calls: live.total_tool_calls,
     tool_breakdown: { ...live.tool_calls },
+    mcp_tool_calls: live.mcp_tool_calls,
+    mcp_servers_used: Array.from(live.mcp_servers_used).sort(),
     lines_added: live.lines_added,
     lines_removed: live.lines_removed,
     files_changed: Array.from(live.files_changed),
@@ -348,6 +506,8 @@ export function liveToFinal(live: LiveMetrics): EvalSessionMetrics {
     cache_hit_rate_trend: live.turns_detail.map((t) => t.cache_hit_rate),
     sidechain_turns: live.sidechain_turns,
     mainchain_turns: live.turns,
+    one_shot: live.turns === 1 && live.stop_reason === "end_turn",
+    shot_bucket: computeShotBucket(live.turns),
     cost_usd: computeCostUsd(
       live.model,
       live.total_input_tokens,
@@ -366,7 +526,34 @@ export function liveToFinal(live: LiveMetrics): EvalSessionMetrics {
     tool_success_rate: live.total_tool_calls > 0 ? 1 - live.tool_errors / live.total_tool_calls : 1,
     exploration_ratio: computeExplorationRatio(live),
     edit_precision: computeEditPrecision(live),
+
+    // P1: output structure
+    message_count: live.message_count,
+    output_chars_total: live.output_chars_total,
+    thinking_chars_total: live.thinking_chars_total,
+    tool_use_chars_p50: Math.round(med(live.tool_use_chars_samples)),
+    tool_use_chars_p90: Math.round(p90(live.tool_use_chars_samples)),
+    tool_result_chars_p50: Math.round(med(live.tool_result_chars_samples)),
+    tool_result_chars_p90: Math.round(p90(live.tool_result_chars_samples)),
+
+    // P1: distributions
+    file_ext_distribution: computeFileExtDistribution(live.files_changed),
+    server_tool_usage: { ...live.server_tool_usage },
+    model_usage: { ...live.model_usage },
+
+    // P1: events & context
+    cache_break_count: countCacheBreaks(live.turns_detail),
+    permission_mode: live.permission_mode,
   };
+}
+
+function computeFileExtDistribution(files: Set<string>): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const f of files) {
+    const ext = normalizeFileExt(f);
+    out[ext] = (out[ext] ?? 0) + 1;
+  }
+  return out;
 }
 
 function computeTokensPerLoc(live: LiveMetrics): number | null {

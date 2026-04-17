@@ -32,12 +32,14 @@ export interface EvalSessionMetrics {
   overall_cache_hit_rate: number; // aggregate cache hit rate
 
   // API performance
-  api_calls: number;
+  api_calls: number;              // = mainchain_turns; one assistant message on the main chain
   api_retries: number;
 
   // Tool usage
   total_tool_calls: number;
   tool_breakdown: Record<string, { count: number; errors: number }>;
+  mcp_tool_calls: number;                 // tool calls whose name starts with "mcp__"
+  mcp_servers_used: string[];             // sorted list of MCP server names seen
 
   // Code changes
   lines_added: number;
@@ -59,6 +61,10 @@ export interface EvalSessionMetrics {
   sidechain_turns: number;
   mainchain_turns: number;
 
+  // Shot (Tier 1 core)
+  one_shot: boolean;                      // mainchain_turns===1 && stop_reason==="end_turn"
+  shot_bucket: "1" | "2-4" | "5-10" | "10+";  // bucket aligned with monitoring doc
+
   // Cost
   cost_usd: number;
 
@@ -76,6 +82,27 @@ export interface EvalSessionMetrics {
   tool_success_rate: number;         // 1 - (tool_errors / total_tool_calls)
   exploration_ratio: number;         // (Read+Grep+Glob) / total_tool_calls
   edit_precision: number;            // unique_files_edited / total_edit_calls (1.0 = no rework)
+
+  // Output structure (P1 — per monitoring doc §1 "输出结构")
+  // Note: *_chars fields are UTF-16 code units (JS `.length`), not bytes.
+  message_count: number;             // user + assistant entries after dedup
+  output_chars_total: number;        // sum of assistant text block char counts
+  thinking_chars_total: number;      // sum of thinking block char counts
+  tool_use_chars_p50: number;        // per tool_use input JSON.stringify length
+  tool_use_chars_p90: number;
+  tool_result_chars_p50: number;     // per user tool_result content char count
+  tool_result_chars_p90: number;
+
+  // Distributions & breakdowns
+  file_ext_distribution: Record<string, number>;  // normalized ext → edit+write count
+  server_tool_usage: Record<string, number>;      // e.g. {web_search_requests: N}
+  model_usage: Record<string, { calls: number; input_tokens: number; output_tokens: number }>;
+
+  // Events
+  cache_break_count: number;         // mainchain transitions cache_read>0 → cache_read===0
+
+  // Session context
+  permission_mode: string;           // last observed permission mode ("" if absent)
 }
 
 // Raw JSONL entry types (matching Claude Code's session format)
@@ -164,6 +191,25 @@ export interface LiveMetrics {
   current_turn_has_error: boolean;
   /** Sidechain turn count */
   sidechain_turns: number;
+  /** MCP tool call count (tools whose name starts with "mcp__") */
+  mcp_tool_calls: number;
+  /** Set of MCP server names seen */
+  mcp_servers_used: Set<string>;
+
+  // Output structure accumulators (P1)
+  message_count: number;
+  output_chars_total: number;
+  thinking_chars_total: number;
+  /** Per-call sample buckets — percentiles computed in liveToFinal */
+  tool_use_chars_samples: number[];
+  tool_result_chars_samples: number[];
+
+  // Distributions (P1)
+  server_tool_usage: Record<string, number>;
+  model_usage: Record<string, { calls: number; input_tokens: number; output_tokens: number }>;
+
+  // Session context (P1)
+  permission_mode: string;
 
   // User interaction tracking
   user_messages: number;
@@ -393,6 +439,16 @@ export function createEmptyLiveMetrics(sessionId: string): LiveMetrics {
     current_turn_tools: [],
     current_turn_has_error: false,
     sidechain_turns: 0,
+    mcp_tool_calls: 0,
+    mcp_servers_used: new Set(),
+    message_count: 0,
+    output_chars_total: 0,
+    thinking_chars_total: 0,
+    tool_use_chars_samples: [],
+    tool_result_chars_samples: [],
+    server_tool_usage: {},
+    model_usage: {},
+    permission_mode: "",
     user_messages: 0,
     user_turns: 0,
     tool_rejections: 0,
