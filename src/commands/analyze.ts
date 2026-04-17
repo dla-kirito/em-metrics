@@ -35,7 +35,8 @@ export function printAnalysis(allMetrics: EvalSessionMetrics[]): void {
   // ── Overview ──
   const hdr = `                  ${col("avg")}${col("median")}${col("p90")}`;
   console.log(chalk.dim(hdr));
-  console.log(`  Turns:          ${col(avg(turns).toFixed(1))}${col(med(turns).toFixed(1))}${col(p90(turns).toFixed(0))}`);
+  console.log(`  User prompts:   ${col(avg(userTurns).toFixed(1))}${col(med(userTurns).toFixed(0))}${col(p90(userTurns).toFixed(0))}   ${chalk.dim("(real user messages)")}`);
+  console.log(`  API calls:      ${col(avg(turns).toFixed(1))}${col(med(turns).toFixed(1))}${col(p90(turns).toFixed(0))}   ${chalk.dim("(assistant msgs incl. tool-use loops)")}`);
   console.log(chalk.dim(`    main:         ${col(avg(mainTurns).toFixed(1))}${col(med(mainTurns).toFixed(1))}${col(p90(mainTurns).toFixed(0))}`));
   if (sum(sidechainTurns) > 0) {
     console.log(chalk.dim(`    sidechain:    ${col(avg(sidechainTurns).toFixed(1))}${col(med(sidechainTurns).toFixed(1))}${col(p90(sidechainTurns).toFixed(0))}`));
@@ -45,7 +46,7 @@ export function printAnalysis(allMetrics: EvalSessionMetrics[]): void {
   console.log(`  Tokens out:     ${col(fmtInt(avg(outputTokens)))}${col(fmtInt(med(outputTokens)))}${col(fmtInt(p90(outputTokens)))}`);
   console.log(`  Cost ($):       ${col(avg(costs).toFixed(4))}${col(med(costs).toFixed(4))}${col(p90(costs).toFixed(4))}   Total: $${sum(costs).toFixed(2)}`);
   console.log(`  Duration (s):   ${col((avg(durations) / 1000).toFixed(1))}${col((med(durations) / 1000).toFixed(1))}${col((p90(durations) / 1000).toFixed(1))}   wall`);
-  console.log(`  Active (s):     ${col((avg(activeDurations) / 1000).toFixed(1))}${col((med(activeDurations) / 1000).toFixed(1))}${col((p90(activeDurations) / 1000).toFixed(1))}`);
+  console.log(`  Active (s):     ${col((avg(activeDurations) / 1000).toFixed(1))}${col((med(activeDurations) / 1000).toFixed(1))}${col((p90(activeDurations) / 1000).toFixed(1))}   ${chalk.dim("(idle gaps >30s excluded)")}`);
 
   // ── Cache ──
   // simple avg treats sessions equally; weighted is the real "tokens saved" ratio.
@@ -121,7 +122,7 @@ export function printAnalysis(allMetrics: EvalSessionMetrics[]): void {
 
   // ── Interaction quality ──
   console.log(chalk.bold("\n  Interaction:"));
-  console.log(`    User turns:      ${col(String(sum(userTurns)), 6)} total  avg ${avg(userTurns).toFixed(1)}  med ${med(userTurns).toFixed(0)}`);
+  console.log(`    User prompts:    ${col(String(sum(userTurns)), 6)} total  avg ${avg(userTurns).toFixed(1)}  med ${med(userTurns).toFixed(0)}`);
   console.log(`    User follow-ups: ${col(String(sum(followups)), 6)} total  avg ${avg(followups).toFixed(1)}  med ${med(followups).toFixed(0)}  p90 ${p90(followups)}  ${chalk.dim("(after end_turn; not necessarily corrections)")}`);
   const totalRejections = sum(allMetrics.map((m) => m.tool_rejections));
   const runtimeErrors = allMetrics.map((m) => m.tool_errors - m.tool_rejections);
@@ -138,9 +139,9 @@ export function printAnalysis(allMetrics: EvalSessionMetrics[]): void {
   if (tokensPerLoc.length > 0) {
     console.log(`    Tokens/LOC:      avg ${col(String(avg(tokensPerLoc).toFixed(0)), 6)}  med ${col(String(med(tokensPerLoc).toFixed(0)), 6)}  p90 ${p90(tokensPerLoc).toFixed(0)}`);
   }
-  console.log(`    Tool success:    avg ${col((avg(toolSuccessRates) * 100).toFixed(0) + "%", 5)}  med ${(med(toolSuccessRates) * 100).toFixed(0)}%`);
-  console.log(`    Exploration:     avg ${col((avg(explorationRatios) * 100).toFixed(0) + "%", 5)}  med ${(med(explorationRatios) * 100).toFixed(0)}%  (Read+Grep+Glob)`);
-  console.log(`    Edit precision:  avg ${col((avg(editPrecisions) * 100).toFixed(0) + "%", 5)}  med ${(med(editPrecisions) * 100).toFixed(0)}%`);
+  console.log(`    Tool non-error:  avg ${col((avg(toolSuccessRates) * 100).toFixed(0) + "%", 5)}  med ${(med(toolSuccessRates) * 100).toFixed(0)}%  ${chalk.dim("(low-level: is_error=false)")}`);
+  console.log(`    Read-type %:     avg ${col((avg(explorationRatios) * 100).toFixed(0) + "%", 5)}  med ${(med(explorationRatios) * 100).toFixed(0)}%  ${chalk.dim("(Read+Grep+Glob / total tool calls)")}`);
+  console.log(`    Files/edit:      avg ${col((avg(editPrecisions) * 100).toFixed(0) + "%", 5)}  med ${(med(editPrecisions) * 100).toFixed(0)}%  ${chalk.dim("(unique files ÷ total edits)")}`);
 
   // ── Tool distribution ──
   const toolTotals: Record<string, { count: number; errors: number; rejections: number }> = {};
@@ -257,6 +258,9 @@ export function printAnalysis(allMetrics: EvalSessionMetrics[]): void {
     const modelSorted = Object.entries(modelAgg).sort((a, b) => b[1].calls - a[1].calls);
     for (const [model, u] of modelSorted) {
       console.log(`    ${model.padEnd(28)} ${String(u.calls).padStart(5)} calls  in=${fmtInt(u.input_tokens)}  out=${fmtInt(u.output_tokens)}`);
+    }
+    if (modelAgg["<synthetic>"]) {
+      console.log(chalk.dim(`    ${col("", 4)}<synthetic> = Claude Code internal calls (e.g. summarization, tool-routing) not backed by a real model id`));
     }
   }
 
