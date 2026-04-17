@@ -5,7 +5,7 @@
 import chalk from "chalk";
 import type { EvalSessionMetrics } from "../types.js";
 import { avg, med, p90, sum } from "../stats.js";
-import { col } from "../format.js";
+import { col, fmtInt } from "../format.js";
 
 export function printAnalysis(allMetrics: EvalSessionMetrics[]): void {
   console.log(chalk.bold(`\nFound ${allMetrics.length} sessions\n`));
@@ -41,27 +41,40 @@ export function printAnalysis(allMetrics: EvalSessionMetrics[]): void {
     console.log(chalk.dim(`    sidechain:    ${col(avg(sidechainTurns).toFixed(1))}${col(med(sidechainTurns).toFixed(1))}${col(p90(sidechainTurns).toFixed(0))}`));
   }
   console.log(`  Tool calls:     ${col(avg(toolCalls).toFixed(1))}${col(med(toolCalls).toFixed(1))}${col(p90(toolCalls).toFixed(0))}`);
-  console.log(`  Tokens in:      ${col(String(Math.round(avg(inputTokens))))}${col(String(Math.round(med(inputTokens))))}${col(String(Math.round(p90(inputTokens))))}`);
-  console.log(`  Tokens out:     ${col(String(Math.round(avg(outputTokens))))}${col(String(Math.round(med(outputTokens))))}${col(String(Math.round(p90(outputTokens))))}`);
+  console.log(`  Tokens in:      ${col(fmtInt(avg(inputTokens)))}${col(fmtInt(med(inputTokens)))}${col(fmtInt(p90(inputTokens)))}`);
+  console.log(`  Tokens out:     ${col(fmtInt(avg(outputTokens)))}${col(fmtInt(med(outputTokens)))}${col(fmtInt(p90(outputTokens)))}`);
   console.log(`  Cost ($):       ${col(avg(costs).toFixed(4))}${col(med(costs).toFixed(4))}${col(p90(costs).toFixed(4))}   Total: $${sum(costs).toFixed(2)}`);
   console.log(`  Duration (s):   ${col((avg(durations) / 1000).toFixed(1))}${col((med(durations) / 1000).toFixed(1))}${col((p90(durations) / 1000).toFixed(1))}   wall`);
   console.log(`  Active (s):     ${col((avg(activeDurations) / 1000).toFixed(1))}${col((med(activeDurations) / 1000).toFixed(1))}${col((p90(activeDurations) / 1000).toFixed(1))}`);
 
   // ── Cache ──
   console.log(`  Cache hit rate: ${col((avg(cacheRates) * 100).toFixed(0) + "%")}${col((med(cacheRates) * 100).toFixed(0) + "%")}${col((p90(cacheRates) * 100).toFixed(0) + "%")}`);
-  console.log(chalk.dim(`    read tokens:  ${col(String(Math.round(avg(cacheReadTokens))))}${col(String(Math.round(med(cacheReadTokens))))}      total: ${sum(cacheReadTokens)}`));
+  console.log(chalk.dim(`    read tokens:  ${col(fmtInt(avg(cacheReadTokens)))}${col(fmtInt(med(cacheReadTokens)))}      total: ${fmtInt(sum(cacheReadTokens))}`));
   if (sum(cacheCreateTokens) > 0) {
-    console.log(chalk.dim(`    create tokens:${col(String(Math.round(avg(cacheCreateTokens))))}${col(String(Math.round(med(cacheCreateTokens))))}      total: ${sum(cacheCreateTokens)}`));
+    console.log(chalk.dim(`    create tokens:${col(fmtInt(avg(cacheCreateTokens)))}${col(fmtInt(med(cacheCreateTokens)))}      total: ${fmtInt(sum(cacheCreateTokens))}`));
   }
 
   // ── One-shot & stop reason ──
-  const oneShotSessions = allMetrics.filter(
-    (m) => m.mainchain_turns === 1 && m.stop_reason === "end_turn"
-  ).length;
+  const oneShotSessions = allMetrics.filter((m) => m.one_shot).length;
   const oneShotRate = allMetrics.length > 0
     ? (oneShotSessions / allMetrics.length * 100).toFixed(0)
     : "0";
   console.log(`  One-shot rate:  ${oneShotRate}% (${oneShotSessions}/${allMetrics.length})`);
+
+  // Shot distribution (aligned with monitoring doc buckets)
+  const bucketCounts: Record<string, number> = { "1": 0, "2-4": 0, "5-10": 0, "10+": 0 };
+  for (const m of allMetrics) {
+    bucketCounts[m.shot_bucket] = (bucketCounts[m.shot_bucket] ?? 0) + 1;
+  }
+  const maxBucket = Math.max(...Object.values(bucketCounts), 1);
+  const barWidth = 20;
+  console.log(`  Shot dist:`);
+  for (const b of ["1", "2-4", "5-10", "10+"]) {
+    const n = bucketCounts[b] ?? 0;
+    const pct = allMetrics.length > 0 ? ((n / allMetrics.length) * 100).toFixed(0) : "0";
+    const bar = "█".repeat(Math.round((n / maxBucket) * barWidth));
+    console.log(`    ${b.padEnd(5)} ${chalk.cyan(bar.padEnd(barWidth))} ${String(n).padStart(4)} (${pct.padStart(2)}%)`);
+  }
 
   // Stop reason distribution
   const stopReasons: Record<string, number> = {};
@@ -82,15 +95,16 @@ export function printAnalysis(allMetrics: EvalSessionMetrics[]): void {
   if (totalLinesAdded > 0 || totalLinesRemoved > 0) {
     console.log(`  Code changes:   ${chalk.green("+" + totalLinesAdded)} / ${chalk.red("-" + totalLinesRemoved)}  (${totalFilesChanged} files)`);
   }
-  if (totalCompacts > 0) {
-    console.log(`  Compactions:    ${totalCompacts} total  (avg ${avg(allMetrics.map((m) => m.compact_count)).toFixed(1)}/session)`);
-  }
 
   // ── Interaction quality ──
   console.log(chalk.bold("\n  Interaction:"));
   console.log(`    User turns:      ${col(String(sum(userTurns)), 6)} total  avg ${avg(userTurns).toFixed(1)}  med ${med(userTurns).toFixed(0)}`);
   console.log(`    Corrections:     ${col(String(sum(corrections)), 6)} total  avg ${avg(corrections).toFixed(1)}  med ${med(corrections).toFixed(0)}  p90 ${p90(corrections)}`);
   console.log(`    Tool errors:     ${col(String(sum(toolErrors)), 6)} total  avg ${avg(toolErrors).toFixed(1)}  med ${med(toolErrors).toFixed(0)}  p90 ${p90(toolErrors)}`);
+  const totalRejections = sum(allMetrics.map((m) => m.tool_rejections));
+  if (totalRejections > 0) {
+    console.log(`    Tool rejections: ${col(String(totalRejections), 6)} total  (user denied tool use)`);
+  }
   console.log(`    Re-edited files: ${col(String(sum(reEdited)), 6)} total  avg ${avg(reEdited).toFixed(1)}  med ${med(reEdited).toFixed(0)}`);
   const abandonedCount = allMetrics.filter((m) => m.abandonment).length;
   console.log(`    Abandoned:       ${abandonedCount}/${allMetrics.length} sessions`);
@@ -117,10 +131,108 @@ export function printAnalysis(allMetrics: EvalSessionMetrics[]): void {
   const total = sorted.reduce((s, [, v]) => s + v.count, 0);
 
   console.log(chalk.bold("\n  Tool distribution:"));
+  const nameW = Math.min(Math.max(16, ...sorted.map(([n]) => n.length)), 40);
   for (const [name, info] of sorted) {
     const pct = ((info.count / total) * 100).toFixed(0);
     const err = info.errors > 0 ? chalk.red(` (${info.errors} err)`) : "";
-    console.log(`    ${name.padEnd(16)} ${String(info.count).padStart(5)}  (${pct.padStart(2)}%)${err}`);
+    const displayName = name.length > nameW ? name.slice(0, nameW - 1) + "…" : name.padEnd(nameW);
+    console.log(`    ${displayName} ${String(info.count).padStart(5)}  (${pct.padStart(2)}%)${err}`);
   }
+
+  // ── MCP usage ──
+  const totalMcp = sum(allMetrics.map((m) => m.mcp_tool_calls));
+  if (totalMcp > 0) {
+    const serverCounts: Record<string, number> = {};
+    for (const m of allMetrics) {
+      for (const [toolName, info] of Object.entries(m.tool_breakdown)) {
+        if (toolName.startsWith("mcp__")) {
+          const parts = toolName.split("__");
+          if (parts.length >= 3 && parts[1]) {
+            serverCounts[parts[1]] = (serverCounts[parts[1]] ?? 0) + info.count;
+          }
+        }
+      }
+    }
+    const sessionsWithMcp = allMetrics.filter((m) => m.mcp_tool_calls > 0).length;
+    console.log(chalk.bold("\n  MCP usage:"));
+    console.log(`    Total MCP calls: ${totalMcp}  (${sessionsWithMcp}/${allMetrics.length} sessions)`);
+    const serverSorted = Object.entries(serverCounts).sort((a, b) => b[1] - a[1]);
+    for (const [server, count] of serverSorted) {
+      console.log(`    ${server.padEnd(16)} ${String(count).padStart(5)}`);
+    }
+  }
+  // ── Output structure ──
+  const outputChars = allMetrics.map((m) => m.output_chars_total);
+  const thinkingChars = allMetrics.map((m) => m.thinking_chars_total);
+  const toolUseP50 = allMetrics.map((m) => m.tool_use_chars_p50);
+  const toolUseP90 = allMetrics.map((m) => m.tool_use_chars_p90);
+  const toolResP50 = allMetrics.map((m) => m.tool_result_chars_p50);
+  const toolResP90 = allMetrics.map((m) => m.tool_result_chars_p90);
+  console.log(chalk.bold("\n  Output structure (chars):"));
+  console.log(`    Text output:     avg ${col(String(Math.round(avg(outputChars))), 7)}  med ${col(String(Math.round(med(outputChars))), 7)}`);
+  if (sum(thinkingChars) > 0) {
+    console.log(`    Thinking:        avg ${col(String(Math.round(avg(thinkingChars))), 7)}  med ${col(String(Math.round(med(thinkingChars))), 7)}`);
+  }
+  console.log(`    Tool input:      p50 ${col(String(Math.round(avg(toolUseP50))), 7)}  p90 ${col(String(Math.round(avg(toolUseP90))), 7)}  (avg across sessions)`);
+  console.log(`    Tool result:     p50 ${col(String(Math.round(avg(toolResP50))), 7)}  p90 ${col(String(Math.round(avg(toolResP90))), 7)}`);
+
+  // ── Events (session-level occurrences) ──
+  const totalCacheBreaks = sum(allMetrics.map((m) => m.cache_break_count));
+  const serverToolTotals: Record<string, number> = {};
+  for (const m of allMetrics) {
+    for (const [k, v] of Object.entries(m.server_tool_usage)) {
+      serverToolTotals[k] = (serverToolTotals[k] ?? 0) + v;
+    }
+  }
+  const nonZeroServerTools = Object.entries(serverToolTotals).filter(([, v]) => v > 0);
+  const hasEvents = totalCompacts > 0 || totalCacheBreaks > 0 || nonZeroServerTools.length > 0;
+  if (hasEvents) {
+    console.log(chalk.bold("\n  Events:"));
+    if (totalCompacts > 0) {
+      console.log(`    Compactions:     ${totalCompacts} total  (avg ${avg(allMetrics.map((m) => m.compact_count)).toFixed(1)}/session)`);
+    }
+    if (totalCacheBreaks > 0) {
+      const sessionsWithBreak = allMetrics.filter((m) => m.cache_break_count > 0).length;
+      console.log(`    Cache breaks:    ${totalCacheBreaks} total  (${sessionsWithBreak}/${allMetrics.length} sessions affected)`);
+    }
+    if (nonZeroServerTools.length > 0) {
+      const parts = nonZeroServerTools.map(([k, v]) => `${k}: ${fmtInt(v)}`);
+      console.log(`    Server tools:    ${parts.join("  ")}`);
+    }
+  }
+
+  // ── File extension distribution ──
+  const extTotals: Record<string, number> = {};
+  for (const m of allMetrics) {
+    for (const [ext, n] of Object.entries(m.file_ext_distribution)) {
+      extTotals[ext] = (extTotals[ext] ?? 0) + n;
+    }
+  }
+  const extEntries = Object.entries(extTotals).sort((a, b) => b[1] - a[1]);
+  if (extEntries.length > 0) {
+    console.log(chalk.bold("\n  File types edited:"));
+    for (const [ext, n] of extEntries.slice(0, 8)) {
+      console.log(`    ${ext.padEnd(12)} ${String(n).padStart(5)}`);
+    }
+  }
+
+  // ── Model usage (only meaningful when multi-model across sessions) ──
+  const modelAgg: Record<string, { calls: number; input_tokens: number; output_tokens: number }> = {};
+  for (const m of allMetrics) {
+    for (const [model, u] of Object.entries(m.model_usage)) {
+      if (!modelAgg[model]) modelAgg[model] = { calls: 0, input_tokens: 0, output_tokens: 0 };
+      modelAgg[model].calls += u.calls;
+      modelAgg[model].input_tokens += u.input_tokens;
+      modelAgg[model].output_tokens += u.output_tokens;
+    }
+  }
+  if (Object.keys(modelAgg).length > 1) {
+    console.log(chalk.bold("\n  Model usage:"));
+    const modelSorted = Object.entries(modelAgg).sort((a, b) => b[1].calls - a[1].calls);
+    for (const [model, u] of modelSorted) {
+      console.log(`    ${model.padEnd(28)} ${String(u.calls).padStart(5)} calls  in=${fmtInt(u.input_tokens)}  out=${fmtInt(u.output_tokens)}`);
+    }
+  }
+
   console.log("");
 }

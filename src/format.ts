@@ -17,6 +17,11 @@ export function formatNum(n: number): string {
   return String(Math.round(n));
 }
 
+/** Integer with thousands separators, e.g. 1053149838 -> "1,053,149,838". */
+export function fmtInt(n: number): string {
+  return Math.round(n).toLocaleString("en-US");
+}
+
 /** Right-align a value in a fixed-width column */
 export function col(v: string, w = 10): string {
   return v.padStart(w);
