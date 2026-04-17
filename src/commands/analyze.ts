@@ -61,19 +61,38 @@ export function printAnalysis(allMetrics: EvalSessionMetrics[]): void {
     : "0";
   console.log(`  One-shot rate:  ${oneShotRate}% (${oneShotSessions}/${allMetrics.length})`);
 
-  // Shot distribution (aligned with monitoring doc buckets)
-  const bucketCounts: Record<string, number> = { "1": 0, "2-4": 0, "5-10": 0, "10+": 0 };
+  // Shot distribution (aligned with monitoring doc buckets).
+  // The "1" bucket is split into one-shot vs stopped (turns=1 but stop_reason
+  // !== end_turn — typically ESC/budget interruption) so the histogram stays
+  // consistent with the "One-shot rate" line above.
+  const bucketCounts: Record<string, number> = {
+    "1 (one-shot)": 0,
+    "1 (stopped)": 0,
+    "2-4": 0,
+    "5-10": 0,
+    "10+": 0,
+  };
   for (const m of allMetrics) {
-    bucketCounts[m.shot_bucket] = (bucketCounts[m.shot_bucket] ?? 0) + 1;
+    if (m.shot_bucket === "1") {
+      if (m.one_shot) bucketCounts["1 (one-shot)"]++;
+      else bucketCounts["1 (stopped)"]++;
+    } else {
+      bucketCounts[m.shot_bucket] = (bucketCounts[m.shot_bucket] ?? 0) + 1;
+    }
   }
+  const rowOrder = ["1 (one-shot)", "1 (stopped)", "2-4", "5-10", "10+"];
+  const visibleRows = rowOrder.filter(
+    (k) => bucketCounts[k] > 0 || k !== "1 (stopped)"
+  );
   const maxBucket = Math.max(...Object.values(bucketCounts), 1);
+  const labelW = Math.max(...visibleRows.map((k) => k.length));
   const barWidth = 20;
   console.log(`  Shot dist:`);
-  for (const b of ["1", "2-4", "5-10", "10+"]) {
-    const n = bucketCounts[b] ?? 0;
+  for (const k of visibleRows) {
+    const n = bucketCounts[k] ?? 0;
     const pct = allMetrics.length > 0 ? ((n / allMetrics.length) * 100).toFixed(0) : "0";
     const bar = "█".repeat(Math.round((n / maxBucket) * barWidth));
-    console.log(`    ${b.padEnd(5)} ${chalk.cyan(bar.padEnd(barWidth))} ${String(n).padStart(4)} (${pct.padStart(2)}%)`);
+    console.log(`    ${k.padEnd(labelW)} ${chalk.cyan(bar.padEnd(barWidth))} ${String(n).padStart(4)} (${pct.padStart(2)}%)`);
   }
 
   // Stop reason distribution
