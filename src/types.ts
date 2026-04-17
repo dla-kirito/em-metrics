@@ -37,7 +37,7 @@ export interface EvalSessionMetrics {
 
   // Tool usage
   total_tool_calls: number;
-  tool_breakdown: Record<string, { count: number; errors: number }>;
+  tool_breakdown: Record<string, { count: number; errors: number; rejections: number }>;
   mcp_tool_calls: number;                 // tool calls whose name starts with "mcp__"
   mcp_servers_used: string[];             // sorted list of MCP server names seen
 
@@ -168,7 +168,7 @@ export interface LiveMetrics {
   total_cache_read_tokens: number;
   total_cache_creation_tokens: number;
   max_context_tokens: number;
-  tool_calls: Record<string, { count: number; errors: number }>;
+  tool_calls: Record<string, { count: number; errors: number; rejections: number }>;
   total_tool_calls: number;
   lines_added: number;
   lines_removed: number;

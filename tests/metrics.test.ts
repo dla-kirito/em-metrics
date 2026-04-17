@@ -34,8 +34,8 @@ describe("extractMetrics", () => {
     ];
     const m = extractMetrics(entries, "s1");
     expect(m.total_tool_calls).toBe(2);
-    expect(m.tool_breakdown["Read"]).toEqual({ count: 1, errors: 0 });
-    expect(m.tool_breakdown["Edit"]).toEqual({ count: 1, errors: 0 });
+    expect(m.tool_breakdown["Read"]).toEqual({ count: 1, errors: 0, rejections: 0 });
+    expect(m.tool_breakdown["Edit"]).toEqual({ count: 1, errors: 0, rejections: 0 });
   });
 
   it("increments correction_count on user text after end_turn", () => {
@@ -347,6 +347,18 @@ describe("P1 metric wiring", () => {
     const m = extractMetrics(entries, "s-reject");
     expect(m.tool_rejections).toBe(1);
     expect(m.tool_errors).toBe(1); // rejection is also an is_error
+    // per-tool breakdown puts it under rejections, not errors
+    expect(m.tool_breakdown["Bash"]).toEqual({ count: 1, errors: 0, rejections: 1 });
+  });
+
+  it("keeps runtime errors and rejections separate in tool_breakdown", () => {
+    const entries: SessionEntry[] = [
+      userText("go"),
+      assistant("m1", [{ name: "Bash", command: "false" }]),
+      toolResults([{ tool_use_id: "m1_tu0", is_error: true }]),
+    ];
+    const m = extractMetrics(entries, "s-err");
+    expect(m.tool_breakdown["Bash"]).toEqual({ count: 1, errors: 1, rejections: 0 });
   });
 
   it("aggregates server_tool_usage across turns", () => {

@@ -123,8 +123,9 @@ export function printAnalysis(allMetrics: EvalSessionMetrics[]): void {
   console.log(chalk.bold("\n  Interaction:"));
   console.log(`    User turns:      ${col(String(sum(userTurns)), 6)} total  avg ${avg(userTurns).toFixed(1)}  med ${med(userTurns).toFixed(0)}`);
   console.log(`    Corrections:     ${col(String(sum(corrections)), 6)} total  avg ${avg(corrections).toFixed(1)}  med ${med(corrections).toFixed(0)}  p90 ${p90(corrections)}`);
-  console.log(`    Tool errors:     ${col(String(sum(toolErrors)), 6)} total  avg ${avg(toolErrors).toFixed(1)}  med ${med(toolErrors).toFixed(0)}  p90 ${p90(toolErrors)}`);
   const totalRejections = sum(allMetrics.map((m) => m.tool_rejections));
+  const runtimeErrors = allMetrics.map((m) => m.tool_errors - m.tool_rejections);
+  console.log(`    Tool errors:     ${col(String(sum(runtimeErrors)), 6)} total  avg ${avg(runtimeErrors).toFixed(1)}  med ${med(runtimeErrors).toFixed(0)}  p90 ${p90(runtimeErrors)}  ${chalk.dim("(runtime failures, rejections excluded)")}`);
   if (totalRejections > 0) {
     console.log(`    Tool rejections: ${col(String(totalRejections), 6)} total  (user denied tool use)`);
   }
@@ -142,12 +143,13 @@ export function printAnalysis(allMetrics: EvalSessionMetrics[]): void {
   console.log(`    Edit precision:  avg ${col((avg(editPrecisions) * 100).toFixed(0) + "%", 5)}  med ${(med(editPrecisions) * 100).toFixed(0)}%`);
 
   // ── Tool distribution ──
-  const toolTotals: Record<string, { count: number; errors: number }> = {};
+  const toolTotals: Record<string, { count: number; errors: number; rejections: number }> = {};
   for (const m of allMetrics) {
     for (const [tool, info] of Object.entries(m.tool_breakdown)) {
-      if (!toolTotals[tool]) toolTotals[tool] = { count: 0, errors: 0 };
+      if (!toolTotals[tool]) toolTotals[tool] = { count: 0, errors: 0, rejections: 0 };
       toolTotals[tool].count += info.count;
       toolTotals[tool].errors += info.errors;
+      toolTotals[tool].rejections += info.rejections;
     }
   }
   const sorted = Object.entries(toolTotals).sort((a, b) => b[1].count - a[1].count);
@@ -158,8 +160,9 @@ export function printAnalysis(allMetrics: EvalSessionMetrics[]): void {
   for (const [name, info] of sorted) {
     const pct = ((info.count / total) * 100).toFixed(0);
     const err = info.errors > 0 ? chalk.red(` (${info.errors} err)`) : "";
+    const rej = info.rejections > 0 ? chalk.yellow(` (${info.rejections} rej)`) : "";
     const displayName = name.length > nameW ? name.slice(0, nameW - 1) + "…" : name.padEnd(nameW);
-    console.log(`    ${displayName} ${String(info.count).padStart(5)}  (${pct.padStart(2)}%)${err}`);
+    console.log(`    ${displayName} ${String(info.count).padStart(5)}  (${pct.padStart(2)}%)${err}${rej}`);
   }
 
   // ── MCP usage ──

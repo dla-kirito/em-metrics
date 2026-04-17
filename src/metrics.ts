@@ -251,7 +251,7 @@ export function processEntry(entry: SessionEntry, metrics: LiveMetrics): void {
         if (block.type === "tool_use") {
           const toolName = block.name;
           if (!metrics.tool_calls[toolName]) {
-            metrics.tool_calls[toolName] = { count: 0, errors: 0 };
+            metrics.tool_calls[toolName] = { count: 0, errors: 0, rejections: 0 };
           }
           metrics.tool_calls[toolName].count++;
           metrics.total_tool_calls++;
@@ -368,15 +368,20 @@ export function processEntry(entry: SessionEntry, metrics: LiveMetrics): void {
 
           if (block.is_error) {
             metrics.tool_errors++;
+            const isReject = isRejectionResult(rc);
             if (metrics.last_tool && metrics.tool_calls[metrics.last_tool]) {
-              metrics.tool_calls[metrics.last_tool].errors++;
+              if (isReject) {
+                metrics.tool_calls[metrics.last_tool].rejections++;
+              } else {
+                metrics.tool_calls[metrics.last_tool].errors++;
+              }
             }
             // Mark last turn as having an error
             if (metrics.turns_detail.length > 0) {
               metrics.turns_detail[metrics.turns_detail.length - 1].has_tool_error = true;
             }
-            // Distinguish user rejections from runtime errors
-            if (isRejectionResult(rc)) {
+            // Distinguish user rejections from runtime errors at the session level
+            if (isReject) {
               metrics.tool_rejections++;
             }
           }
