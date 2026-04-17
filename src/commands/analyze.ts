@@ -48,7 +48,11 @@ export function printAnalysis(allMetrics: EvalSessionMetrics[]): void {
   console.log(`  Active (s):     ${col((avg(activeDurations) / 1000).toFixed(1))}${col((med(activeDurations) / 1000).toFixed(1))}${col((p90(activeDurations) / 1000).toFixed(1))}`);
 
   // ── Cache ──
-  console.log(`  Cache hit rate: ${col((avg(cacheRates) * 100).toFixed(0) + "%")}${col((med(cacheRates) * 100).toFixed(0) + "%")}${col((p90(cacheRates) * 100).toFixed(0) + "%")}`);
+  // simple avg treats sessions equally; weighted is the real "tokens saved" ratio.
+  const totalReadTok = sum(cacheReadTokens);
+  const totalCacheDenom = sum(inputTokens) + totalReadTok + sum(cacheCreateTokens);
+  const weightedCacheHit = totalCacheDenom > 0 ? totalReadTok / totalCacheDenom : 0;
+  console.log(`  Cache hit rate: ${col((avg(cacheRates) * 100).toFixed(0) + "%")}${col((med(cacheRates) * 100).toFixed(0) + "%")}${col((p90(cacheRates) * 100).toFixed(0) + "%")}   ${chalk.dim("token-weighted:")} ${chalk.bold((weightedCacheHit * 100).toFixed(0) + "%")}`);
   console.log(chalk.dim(`    read tokens:  ${col(fmtInt(avg(cacheReadTokens)))}${col(fmtInt(med(cacheReadTokens)))}      total: ${fmtInt(sum(cacheReadTokens))}`));
   if (sum(cacheCreateTokens) > 0) {
     console.log(chalk.dim(`    create tokens:${col(fmtInt(avg(cacheCreateTokens)))}${col(fmtInt(med(cacheCreateTokens)))}      total: ${fmtInt(sum(cacheCreateTokens))}`));
