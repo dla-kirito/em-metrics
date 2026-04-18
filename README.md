@@ -1,8 +1,10 @@
 # em -- AI Coding Agent DevTools CLI
 
-`em` is a command-line tool that provides observability and evaluation capabilities for Claude Code and Coco sessions. It extracts structured metrics from raw session logs, detects behavioral patterns, and runs reproducible eval suites with CI integration.
+[![npm version](https://img.shields.io/npm/v/em-metrics.svg)](https://www.npmjs.com/package/em-metrics)
+[![npm downloads](https://img.shields.io/npm/dw/em-metrics.svg)](https://www.npmjs.com/package/em-metrics)
+[![license](https://img.shields.io/npm/l/em-metrics.svg)](./LICENSE)
 
-**Version:** 0.1.0
+`em` is a command-line tool that provides observability and evaluation capabilities for Claude Code and Coco sessions. It extracts structured metrics from raw session logs, detects behavioral patterns, and runs reproducible eval suites with CI integration.
 
 ## Installation
 
