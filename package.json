@@ -4,6 +4,14 @@
   "description": "Observability and eval framework for Claude Code and Coco sessions",
   "type": "module",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/dla-kirito/em-metrics.git"
+  },
+  "bugs": {
+    "url": "https://github.com/dla-kirito/em-metrics/issues"
+  },
+  "homepage": "https://github.com/dla-kirito/em-metrics#readme",
   "bin": {
     "em": "./dist/cli.js"
   },
