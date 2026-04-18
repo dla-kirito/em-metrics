@@ -1,6 +1,6 @@
 {
   "name": "em-metrics",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Observability and eval framework for Claude Code and Coco sessions",
   "type": "module",
   "license": "MIT",
