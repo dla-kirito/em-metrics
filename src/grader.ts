@@ -20,13 +20,14 @@ export async function runGraders(
   graders: GraderConfig[],
   cwd: string,
   transcriptPath: string,
-  source?: "claude" | "coco"
+  source?: "claude" | "coco",
+  sessionId?: string
 ): Promise<GraderResult[]> {
   const results: GraderResult[] = [];
 
   for (const g of graders) {
     if (g.type === "code") {
-      results.push(await runCodeGrader(g, cwd));
+      results.push(await runCodeGrader(g, cwd, transcriptPath, sessionId));
     } else if (g.type === "llm") {
       results.push(await runLLMGrader(g, transcriptPath, source));
     }
@@ -37,7 +38,9 @@ export async function runGraders(
 
 async function runCodeGrader(
   g: CodeGraderConfig,
-  cwd: string
+  cwd: string,
+  transcriptPath?: string,
+  sessionId?: string
 ): Promise<GraderResult> {
   const base = { name: g.name, type: "code" as const };
 
@@ -96,6 +99,12 @@ async function runCodeGrader(
           cwd,
           stdio: "pipe",
           timeout: 60_000,
+          env: {
+            ...process.env,
+            EVAL_SESSION_ID: sessionId ?? "",
+            EVAL_SESSION_JSONL: transcriptPath ?? "",
+            EVAL_SANDBOX_CWD: cwd,
+          },
         });
         return {
           ...base,
@@ -105,11 +114,12 @@ async function runCodeGrader(
         };
       } catch (err: any) {
         const stderr = err.stderr?.toString().slice(0, 300) ?? "";
+        const stdout = err.stdout?.toString().slice(0, 500) ?? "";
         return {
           ...base,
           passed: false,
           score: 0,
-          detail: `Command failed (exit ${err.status}): ${g.command}\n${stderr}`,
+          detail: `Command failed (exit ${err.status}): ${g.command}\n${stdout}${stderr}`,
         };
       }
     }

@@ -90,7 +90,7 @@ export async function runTrial(
 
   // 6. Run graders (only if task actually ran)
   let graderResults = task.graders.length > 0 && transcriptExists
-    ? await runGraders(task.graders, task.cwd, transcriptPath, task.source)
+    ? await runGraders(task.graders, task.cwd, transcriptPath, task.source, sessionId)
     : [];
 
   // If no graders defined, mark as passed if claude completed without error
